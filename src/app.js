@@ -998,7 +998,7 @@ function bindShower(){
   $("#shExample").onclick=()=>{stopAuto();Object.assign(SH,{mode:2,share:false,a:.5,c:.25,b:.6,target:38,lr:.001,stage:-1,steps:0});SH.hist=[shForward().T];renderShower();};
 }
 /* ---- Shower lab in 3D: same state and arithmetic as above, drawn with three.js ---- */
-const S3={ok:null,R:null,scene:null,cam:null,ctl:null,root:null,key:null,pipes:{},knobs:{},pills:{},nud:{},arrows:{},labels:[],parts:[],blame:[],drops:null,dropSt:[],headMat:null,tLab:null,tgtLab:null,tgt2:null,raf:0,last:0,drag:null,lay:null};
+const S3={hls:[],ov:null,ok:null,R:null,scene:null,cam:null,ctl:null,root:null,key:null,pipes:{},knobs:{},pills:{},nud:{},arrows:{},labels:[],parts:[],blame:[],drops:null,dropSt:[],headMat:null,tLab:null,tgtLab:null,tgt2:null,raf:0,last:0,drag:null,lay:null};
 const shWrap=()=>$("#sh3dWrap"),shCv=()=>$("#sh3d");
 function L3(){ // layouts reuse the 2D drawing's coordinates (SVG px → world units)
   const m=SH.mode;
@@ -1011,7 +1011,7 @@ function L3(){ // layouts reuse the 2D drawing's coordinates (SVG px → world u
   return {cy:220,h:440,head:[628,220],tanks:[[75,60],[75,380]],
     pipes:pk.map(k=>({k,d:PIPES[k],z:k.startsWith("hot")?-.8:k.startsWith("cold")?.8:0,thin:/^(hot|cold)/.test(k)})),
     knobs:(two?[["a",270,130,SH.share?"shared knob a":"Mixer A · knob a"],["c",270,310,SH.share?"shares knob a":"Mixer B · knob c"],["b",500,220,"Valve · knob b"]]:[["a",270,130,"the only knob · a"]]).map(([k,x,y,name])=>({k,x,y,s:1,name})),
-    pills:two?{err:[586,248],b:[478,318],pa:[368,108],pb:[356,332],a:[270,80],c:[270,250]}:{err:[560,180],a:[270,80]},
+    pills:two?{err:[586,248],b:[560,352],pa:[368,108],pb:[356,332],a:[270,80],c:[270,250]}:{err:[560,180],a:[270,80]},
     nud:two?{a:[270,224],c:[270,402],b:[500,172]}:{a:[270,224]},heads:[]};}
 
 function sh3dInit(){
@@ -1029,7 +1029,7 @@ function sh3dInit(){
   cv.addEventListener("pointermove",e=>{if(S3.drag){const k=S3.drag.k==="c"&&SH.share&&SH.mode===2?"a":S3.drag.k;setKnob(k,S3.drag.v0+(S3.drag.y0-e.clientY)/160);return;}cv.style.cursor=hitKnob(e)?"ns-resize":"grab";});
   const up=()=>{if(S3.drag){S3.drag=null;S3.ctl.enabled=true;}};cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
   new ResizeObserver(sh3dResize).observe(shWrap());
-  S3.ok=true;$("#shSvg").style.display="none";shWrap().hidden=false;return true;}
+  S3.ov=$("#sh3dOv");S3.ok=true;$("#shSvg").style.display="none";shWrap().hidden=false;return true;}
 function sh3dResize(){if(!S3.ok)return;const w=shWrap().clientWidth,h=shWrap().clientHeight;if(!w||!h)return;S3.R.setSize(w,h,false);S3.cam.aspect=w/h;S3.cam.updateProjectionMatrix();}
 const P3=(x,y,cy,z=0)=>new THREE.Vector3((x-380)/40,(cy-y)/40,z);
 function pathCurve(d,cy,zb){ // parse the 2D path ("M x,y C … H x") into a 3D curve; supply pipes bow in depth so they pass each other
@@ -1039,20 +1039,25 @@ function pathCurve(d,cy,zb){ // parse the 2D path ("M x,y C … H x") into a 3D 
     else if(cmd==="C"){const p1=P3(+tk[i],+tk[i+1],cy,zb),p2=P3(+tk[i+2],+tk[i+3],cy,zb),p3=P3(+tk[i+4],+tk[i+5],cy);cp.add(new THREE.CubicBezierCurve3(cur,p1,p2,p3));cur=p3;i+=6;}
     else if(cmd==="H"){const p=new THREE.Vector3((+tk[i]-380)/40,cur.y,cur.z);cp.add(new THREE.LineCurve3(cur,p));cur=p;i+=1;}else i++;}
   return cp;}
-function txtSprite(text,o={}){ // world-space label; o: size, col, bg, bold
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({transparent:true,depthTest:false}));sp.renderOrder=10;sp.userData={o,text:null};setTxt(sp,text);return sp;}
-function setTxt(sp,text){if(sp.userData.text===text)return;sp.userData.text=text;const o=sp.userData.o,cv=document.createElement("canvas"),x=cv.getContext("2d");
-  const f=`${o.bold?700:500} ${o.px||40}px ${o.mono?'"JetBrains Mono",monospace':'"IBM Plex Sans",system-ui,sans-serif'}`;x.font=f;
-  const w=Math.max(8,Math.ceil(x.measureText(text||" ").width)+(o.bg?34:10)),h=(o.px||40)*1.5;cv.width=w;cv.height=h;x.font=f;
-  if(o.bg){x.fillStyle=o.bg;const r=h/2;x.beginPath();x.moveTo(r,0);x.lineTo(w-r,0);x.arc(w-r,r,r,-Math.PI/2,Math.PI/2);x.lineTo(r,h);x.arc(r,r,r,Math.PI/2,Math.PI*1.5);x.fill();
-    if(o.stroke){x.strokeStyle=o.stroke;x.lineWidth=4;x.stroke();}}
-  x.fillStyle=o.col||CS.fg;x.textAlign="center";x.textBaseline="middle";x.fillText(text||"",w/2,h/2+2);
-  if(sp.material.map)sp.material.map.dispose();sp.material.map=new THREE.CanvasTexture(cv);sp.material.map.anisotropy=4;sp.material.needsUpdate=true;
-  const H=o.size||.4;sp.scale.set(H*w/h,H,1);}
+/* labels are real HTML text positioned over the 3D view each frame, so they stay sharp at any zoom or screen density */
+let HLc=null;
+function txtSprite(text,o={}){
+  if(!HLc)HLc=class extends THREE.Object3D{constructor(o){super();this.userData.o=o;this.el=document.createElement("div");this.el.className="hl";this.txt=null;S3.ov.appendChild(this.el);S3.hls.push(this);}};
+  const l=new HLc(o);setTxt(l,text);return l;}
+function setTxt(l,text){const o=l.userData.o,e=l.el;
+  e.style.color=o.col||"var(--fg)";e.style.background=o.bg||"transparent";e.style.border=o.stroke?`1.5px solid ${o.stroke}`:"0";
+  e.style.fontFamily=o.mono?"var(--f-mono)":"var(--f-body)";e.style.fontWeight=o.bold?"600":"500";e.classList.toggle("pill",!!o.bg);
+  l.fs=Math.max(11,(o.size||.4)*32);if(l.txt!==text){l.txt=text;e.textContent=text||"";}}
+function placeLabels(){const cv=shCv(),w=cv.clientWidth,h=cv.clientHeight,k=clamp(w/760,.74,1.15),v=new THREE.Vector3();
+  S3.hls.forEach(l=>{let vis=l.visible&&!!l.txt,p=l.parent;while(vis&&p){vis=p.visible;p=p.parent;}
+    if(vis){l.getWorldPosition(v);v.project(S3.cam);vis=v.z<1&&Math.abs(v.x)<1.3&&Math.abs(v.y)<1.3;}
+    if(!vis){if(l.el.style.display!=="none")l.el.style.display="none";return;}
+    l.el.style.display="";l.el.style.fontSize=(l.fs*k).toFixed(1)+"px";
+    l.el.style.transform=`translate(${Math.round((v.x+1)/2*w)}px,${Math.round((1-v.y)/2*h)}px) translate(-50%,-50%)`;});}
 const tcol=T=>new THREE.Color(tempCol(T));
 function disposeTree(o){o.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){const ms=Array.isArray(c.material)?c.material:[c.material];ms.forEach(m=>{if(m.map)m.map.dispose();m.dispose();});}});}
 function sh3dBuild(){
-  if(S3.root){S3.scene.remove(S3.root);disposeTree(S3.root);}
+  if(S3.root){S3.scene.remove(S3.root);disposeTree(S3.root);}S3.ov.innerHTML="";S3.hls=[];
   const lay=L3(),cy=lay.cy,root=new THREE.Group();S3.root=root;S3.lay=lay;S3.scene.add(root);S3.scene.background=new THREE.Color(CS.bg);
   S3.pipes={};S3.knobs={};S3.pills={};S3.nud={};S3.arrows={};S3.parts=[];S3.blame=[];
   const std=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.45,metalness:.08},o));
@@ -1062,7 +1067,7 @@ function sh3dBuild(){
   [[lay.tanks[0],THOT,"Hot",CS.ink],[lay.tanks[1],TCOLD,"Cold",CS.neg]].forEach(([[x,y],T,n,c])=>{const p=P3(x,y,cy);
     const tank=new THREE.Mesh(new THREE.CylinderGeometry(.95,.95,1.5,40),std(c,{transparent:true,opacity:.9}));tank.position.copy(p);root.add(tank);
     const cap=new THREE.Mesh(new THREE.CylinderGeometry(1,1,.12,40),std(CS.surface));cap.position.set(p.x,p.y+.8,p.z);root.add(cap);
-    const lb=txtSprite(`${n} ${T} °C`,{size:.5,bold:true,col:CS.fg});lb.position.set(p.x,p.y+1.35,p.z);root.add(lb);});
+    const lb=txtSprite(`${n} ${T} °C`,{size:.5,bold:true,col:CS.fg});lb.position.set(p.x,n==="Cold"?p.y-1.3:p.y+1.35,p.z);root.add(lb);});
   // pipes: a glass tube with water particles inside, plus a blame-particle stream
   lay.pipes.forEach(pp=>{const curve=pathCurve(pp.d,cy,pp.z);const len=curve.getLength();
     const mat=std(CS.grid,{transparent:true,opacity:.55,roughness:.15,metalness:.05,depthWrite:false});
@@ -1090,7 +1095,7 @@ function sh3dBuild(){
   if(SH.mode===2&&SH.share){const a=S3.knobs.a.g.position,c=S3.knobs.c.g.position;const l=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,a.distanceTo(c)-2,8),new THREE.MeshBasicMaterial({color:CS.accent}));l.position.set(a.x,(a.y+c.y)/2,.3);root.add(l);}
   // blame pills and nudge labels
   Object.entries(lay.pills).forEach(([id,[x,y]])=>{const sp=txtSprite("",{size:.4,bg:CS.accent,col:CS.surface,mono:true});sp.position.copy(P3(x,y,cy,1.15));sp.visible=false;root.add(sp);S3.pills[id]=sp;});
-  Object.entries(lay.nud).forEach(([k,[x,y]])=>{const sp=txtSprite("",{size:.4,col:CS.accent,bold:true,mono:true,bg:CS.surface});sp.position.copy(P3(x,y,cy,1.3));sp.visible=false;root.add(sp);S3.nud[k]=sp;});
+  Object.keys(lay.nud).forEach(k=>{const o=S3.knobs[k];if(!o)return;const sp=txtSprite("",{size:.4,col:CS.accent,bold:true,mono:true,bg:CS.surface,stroke:CS.accent});if(SH.mode===3)sp.position.set(-o.R-1.35,.05,.6);else sp.position.set(0,-o.R-1.4,.6);sp.visible=false;o.g.add(sp);S3.nud[k]=sp;});
   lay.heads.forEach(([x,y,t])=>{const sp=txtSprite(t,{size:.3,mono:true,col:CS.muted});sp.position.copy(P3(x,y,cy,0));root.add(sp);});
   // shower head with falling drops
   const [hx,hy]=lay.head,o=P3(hx,hy,cy),hp=new THREE.CurvePath(),q1=o.clone().add(new THREE.Vector3(.7,0,0)),q2=q1.clone().add(new THREE.Vector3(0,.75,0));
@@ -1100,8 +1105,8 @@ function sh3dBuild(){
   S3.drops=new THREE.InstancedMesh(new THREE.SphereGeometry(1,8,6),new THREE.MeshBasicMaterial(),70);root.add(S3.drops);
   S3.dropSt=[...Array(70)].map(()=>({x:(Math.random()-.5)*1.2,z:(Math.random()-.5)*1.2,y:-Math.random()*3,v:2+Math.random()*1.5}));
   S3.tLab=txtSprite("",{size:.62,bold:true});S3.tLab.position.set(S3.head.x,S3.head.y+1.05,0);root.add(S3.tLab);
-  S3.tgtLab=txtSprite("",{size:.42,col:CS.muted});S3.tgtLab.position.set(S3.head.x,S3.head.y-3.55,0);root.add(S3.tgtLab);
-  S3.tgt2=txtSprite("",{size:.42,col:CS.fg,bold:true});S3.tgt2.position.set(S3.head.x,S3.head.y-4.05,0);root.add(S3.tgt2);
+  S3.tgtLab=txtSprite("",{size:.42,col:CS.muted});S3.tgtLab.position.set(S3.head.x+.3,S3.head.y-3.75,0);root.add(S3.tgtLab);
+  S3.tgt2=txtSprite("",{size:.42,col:CS.fg,bold:true});S3.tgt2.position.set(S3.head.x+.3,S3.head.y-4.25,0);root.add(S3.tgt2);
   // camera framing
   const dz=SH.mode===3?23:19;S3.cam.position.set(-2.4,3.6,dz);S3.ctl.target.set(.2,-.4,0);S3.ctl.update();
   shWrap().style.aspectRatio=SH.mode===3?"760 / 560":"760 / 470";sh3dResize();
@@ -1162,7 +1167,7 @@ function sh3dFrame(now){
     dmy3.position.set(S3.head.x+s.x*(1+(-s.y)*.12),S3.head.y-.25+s.y,s.z*(1+(-s.y)*.12));dmy3.scale.set(.05,.09,.05);dmy3.updateMatrix();S3.drops.setMatrixAt(i,dmy3.matrix);});
   S3.drops.instanceMatrix.needsUpdate=true;
   Object.values(S3.arrows).forEach(a=>{if(a.visible)a.rotation.z=Math.sin(t*2.2)*.12*mv;});
-  S3.ctl.update();S3.R.render(S3.scene,S3.cam);
+  S3.ctl.update();S3.R.render(S3.scene,S3.cam);placeLabels();
   S3.raf=requestAnimationFrame(sh3dFrame);}
 function sh3dStart(){if(S3.ok&&!S3.raf&&!$("#shower").hidden)S3.raf=requestAnimationFrame(sh3dFrame);}
 function sh3dStop(){if(S3.raf){cancelAnimationFrame(S3.raf);S3.raf=0;}}

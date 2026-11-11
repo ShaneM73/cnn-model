@@ -272,6 +272,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 #shChart{width:100%;height:150px}
 .sh3dwrap{position:relative;width:100%;aspect-ratio:760/470;border-radius:12px;overflow:hidden;background:var(--bg)}
 #sh3d{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.sh3dov{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.hl{position:absolute;left:0;top:0;white-space:nowrap;line-height:1.3;will-change:transform;-webkit-font-smoothing:antialiased}
+.hl.pill{border-radius:999px;padding:1px 8px}
 .knobs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px}
 .readout .cold{color:var(--neg);font-weight:500}
 .readout .hot{color:var(--ink);font-weight:500}
@@ -454,7 +457,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     <section class="gs wide">
       <div class="shgrid">
         <div class="sec" style="gap:8px">
-          <div class="sh3dwrap" id="sh3dWrap" hidden><canvas id="sh3d" aria-label="3D shower: drag a knob up or down to turn it, drag anywhere else to orbit"></canvas></div>
+          <div class="sh3dwrap" id="sh3dWrap" hidden><canvas id="sh3d" aria-label="3D shower: drag a knob up or down to turn it, drag anywhere else to orbit"></canvas><div class="sh3dov" id="sh3dOv" aria-hidden="true"></div></div>
           <svg id="shSvg" viewBox="0 0 760 440" role="img" aria-label="Plumbing: hot and cold water feed two mixers, a valve blends them, the shower shows the temperature"></svg>
           <p class="cap">Drag a knob up or down to turn it; drag anywhere else to orbit, scroll to zoom. Water colour is temperature and pipe thickness is how much of the shower's water flows through it. Teal beads running backwards are the blame signal.</p>
         </div>
