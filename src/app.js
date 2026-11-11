@@ -897,7 +897,7 @@ function drawShower(){
   // reverse-flow overlays
   const flows=two_?{out:st>=0,outA:st>=1,outB:st>=1}:{direct:st>=0};
   for(const k in PIPES)$("#pf_"+k).setAttribute("opacity",flows[k]?1:0);
-  shLedger(f,e,g,d);shChart();
+  shLedger(f,e,g,d);shChart();sh3dSync();shKnobSync();
   $("#shBack").textContent=SH.stage<0?"◀ Backward pass":SH.stage>=(two_?3:2)?"◀ Backward pass (done)":"◀ Next backward step";
 }
 function setKnobVis(k,v,txt,hot){const el=$("#k_"+k);if(!el)return;el.querySelector(".kptr").setAttribute("transform",`rotate(${-135+270*v})`);
@@ -927,7 +927,7 @@ function drawDeep(){
   K3.forEach(k=>{const t=$("#n_"+k);t.textContent=st>=4?`${d[k]>=0?"↻ up":"↺ down"} ${sgn(d[k])}`:"";});
   const flows={out:st>=0,v1o:st>=1,v2o:st>=1,m1v1:st>=2,m2v1:st>=2,m2v2:st>=2,m3v2:st>=2};
   for(const k in DPIPES)$("#pf_"+k).setAttribute("opacity",flows[k]?1:0);
-  deepLedger(f,e,g,d);shChart();
+  deepLedger(f,e,g,d);shChart();sh3dSync();shKnobSync();
   $("#shBack").textContent=st<0?"◀ Backward pass":st>=4?"◀ Backward pass (done)":["◀ Next: layer 3","◀ Next: layer 2","◀ Next: layer 1","◀ Next: the nudges"][st];
 }
 function deepLedger(f,e,g,d){
@@ -976,7 +976,8 @@ function syncShowerUI(){
   $$("[data-lr]").forEach(b=>b.setAttribute("aria-pressed",Math.abs(+b.dataset.lr-SH.lr)<1e-9));
   const fac=(()=>{const g=shGrad(shForward()),keys=SH.mode===3?K3:["a","b","c"];return keys.filter(k=>g[k]!=null&&!(SH.share&&k==="c")).reduce((s,k)=>s+g[k]*g[k],0);})()*SH.lr;
   $("#shLRnote").textContent=fac>2?"Too big: each step overshoots by more than it corrects, so the temperature swings back and forth.":fac>1.05?"A bit big: it overshoots, then settles.":fac<.35?"Small: safe, but it takes many steps.":"About right: close to the target in a step or two.";}
-function renderShower(){const want=SH.mode===3?"deep":"basic";if(SH.built!==want){want==="deep"?buildDeep():buildShower();if(!SH.hist.length)SH.hist=[shForward().T];}syncShowerUI();drawShower();}
+function renderShower(){const want=SH.mode===3?"deep":"basic";if(SH.built!==want){want==="deep"?buildDeep():buildShower();if(!SH.hist.length)SH.hist=[shForward().T];}
+  try{sh3dInit();}catch(err){console.error(err);S3.ok=false;$("#shSvg").style.display="";$("#sh3dWrap").hidden=true;}syncShowerUI();drawShower();}
 function bindShower(){
   $("#shMode1").onclick=()=>{stopAuto();SH.mode=1;SH.share=false;SH.stage=-1;SH.hist=[shForward().T];SH.steps=0;renderShower();};
   $("#shMode2").onclick=()=>{stopAuto();SH.mode=2;SH.stage=-1;SH.hist=[shForward().T];SH.steps=0;renderShower();};
@@ -996,6 +997,183 @@ function bindShower(){
   $("#shShut").onclick=()=>{stopAuto();Object.assign(SH,{mode:2,share:false,b:0,stage:-1,steps:0});SH.hist=[shForward().T];renderShower();SH.stage=3;drawShower();};
   $("#shExample").onclick=()=>{stopAuto();Object.assign(SH,{mode:2,share:false,a:.5,c:.25,b:.6,target:38,lr:.001,stage:-1,steps:0});SH.hist=[shForward().T];renderShower();};
 }
+/* ---- Shower lab in 3D: same state and arithmetic as above, drawn with three.js ---- */
+const S3={ok:null,R:null,scene:null,cam:null,ctl:null,root:null,key:null,pipes:{},knobs:{},pills:{},nud:{},arrows:{},labels:[],parts:[],blame:[],drops:null,dropSt:[],headMat:null,tLab:null,tgtLab:null,tgt2:null,raf:0,last:0,drag:null,lay:null};
+const shWrap=()=>$("#sh3dWrap"),shCv=()=>$("#sh3d");
+function L3(){ // layouts reuse the 2D drawing's coordinates (SVG px → world units)
+  const m=SH.mode;
+  if(m===3)return {cy:260,h:520,head:[636,260],tanks:[[75,70],[75,470]],
+    pipes:Object.keys(DPIPES).map(k=>({k,d:DPIPES[k],z:k.startsWith("hot")?-.8:k.startsWith("cold")?.8:0,thin:/^(hot|cold)/.test(k)})),
+    knobs:K3.map(k=>({k,x:DKN[k][0],y:DKN[k][1],s:.78,name:{a1:"mixer a₁",a2:"mixer a₂",a3:"mixer a₃",b1:"valve b₁",b2:"valve b₂",c:"valve c"}[k]})),
+    pills:{err:[612,228],c:[565,340],vc1:[488,214],vc2:[488,306],b1:[400,118],b2:[400,414],m11:[318,145],m21:[318,225],m22:[318,295],m32:[318,375],a1:[215,58],a2:[215,208],a3:[215,358]},
+    nud:DNUDGE,heads:[[215,22,"LAYER 1 · mixers"],[400,22,"LAYER 2 · valves"],[565,22,"LAYER 3 · output"]]};
+  const two=m===2,pk=two?["hotA","coldA","hotB","coldB","outA","outB","out"]:["hotA","coldA","direct"];
+  return {cy:220,h:440,head:[628,220],tanks:[[75,60],[75,380]],
+    pipes:pk.map(k=>({k,d:PIPES[k],z:k.startsWith("hot")?-.8:k.startsWith("cold")?.8:0,thin:/^(hot|cold)/.test(k)})),
+    knobs:(two?[["a",270,130,SH.share?"shared knob a":"Mixer A · knob a"],["c",270,310,SH.share?"shares knob a":"Mixer B · knob c"],["b",500,220,"Valve · knob b"]]:[["a",270,130,"the only knob · a"]]).map(([k,x,y,name])=>({k,x,y,s:1,name})),
+    pills:two?{err:[586,248],b:[478,318],pa:[368,108],pb:[356,332],a:[270,80],c:[270,250]}:{err:[560,180],a:[270,80]},
+    nud:two?{a:[270,224],c:[270,402],b:[500,172]}:{a:[270,224]},heads:[]};}
+
+function sh3dInit(){
+  if(S3.ok!==null)return S3.ok;
+  if(typeof THREE==="undefined"){S3.ok=false;return false;}
+  try{S3.R=new THREE.WebGLRenderer({canvas:shCv(),antialias:true});}catch(e){S3.ok=false;return false;}
+  S3.R.setPixelRatio(Math.min(devicePixelRatio,2));
+  S3.scene=new THREE.Scene();S3.cam=new THREE.PerspectiveCamera(36,1.7,.1,200);
+  S3.ctl=new THREE.OrbitControls(S3.cam,shCv());S3.ctl.enableDamping=true;S3.ctl.dampingFactor=.09;S3.ctl.minDistance=6;S3.ctl.maxDistance=40;
+  S3.scene.add(new THREE.AmbientLight(0xffffff,.72));const dl=new THREE.DirectionalLight(0xffffff,.6);dl.position.set(6,9,12);S3.scene.add(dl);
+  const cv=shCv(),ray=new THREE.Raycaster(),m=new THREE.Vector2();
+  const hitKnob=e=>{const r=cv.getBoundingClientRect();m.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(m,S3.cam);
+    const hs=ray.intersectObjects(Object.values(S3.knobs).map(o=>o.hit),false);return hs[0]?hs[0].object.userData.k:null;};
+  cv.addEventListener("pointerdown",e=>{const k=hitKnob(e);if(!k)return;S3.drag={k,y0:e.clientY,v0:getK(k==="c"&&SH.share&&SH.mode===2?"a":k)};S3.ctl.enabled=false;cv.setPointerCapture(e.pointerId);stopAuto();e.preventDefault();});
+  cv.addEventListener("pointermove",e=>{if(S3.drag){const k=S3.drag.k==="c"&&SH.share&&SH.mode===2?"a":S3.drag.k;setKnob(k,S3.drag.v0+(S3.drag.y0-e.clientY)/160);return;}cv.style.cursor=hitKnob(e)?"ns-resize":"grab";});
+  const up=()=>{if(S3.drag){S3.drag=null;S3.ctl.enabled=true;}};cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);
+  new ResizeObserver(sh3dResize).observe(shWrap());
+  S3.ok=true;$("#shSvg").style.display="none";shWrap().hidden=false;return true;}
+function sh3dResize(){if(!S3.ok)return;const w=shWrap().clientWidth,h=shWrap().clientHeight;if(!w||!h)return;S3.R.setSize(w,h,false);S3.cam.aspect=w/h;S3.cam.updateProjectionMatrix();}
+const P3=(x,y,cy,z=0)=>new THREE.Vector3((x-380)/40,(cy-y)/40,z);
+function pathCurve(d,cy,zb){ // parse the 2D path ("M x,y C … H x") into a 3D curve; supply pipes bow in depth so they pass each other
+  const tk=d.match(/[MCH]|-?\d*\.?\d+/g);let i=0,cmd="",cur=null;const cp=new THREE.CurvePath();
+  while(i<tk.length){if(/[MCH]/.test(tk[i])){cmd=tk[i++];continue;}
+    if(cmd==="M"){cur=P3(+tk[i],+tk[i+1],cy);i+=2;}
+    else if(cmd==="C"){const p1=P3(+tk[i],+tk[i+1],cy,zb),p2=P3(+tk[i+2],+tk[i+3],cy,zb),p3=P3(+tk[i+4],+tk[i+5],cy);cp.add(new THREE.CubicBezierCurve3(cur,p1,p2,p3));cur=p3;i+=6;}
+    else if(cmd==="H"){const p=new THREE.Vector3((+tk[i]-380)/40,cur.y,cur.z);cp.add(new THREE.LineCurve3(cur,p));cur=p;i+=1;}else i++;}
+  return cp;}
+function txtSprite(text,o={}){ // world-space label; o: size, col, bg, bold
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({transparent:true,depthTest:false}));sp.renderOrder=10;sp.userData={o,text:null};setTxt(sp,text);return sp;}
+function setTxt(sp,text){if(sp.userData.text===text)return;sp.userData.text=text;const o=sp.userData.o,cv=document.createElement("canvas"),x=cv.getContext("2d");
+  const f=`${o.bold?700:500} ${o.px||40}px ${o.mono?'"JetBrains Mono",monospace':'"IBM Plex Sans",system-ui,sans-serif'}`;x.font=f;
+  const w=Math.max(8,Math.ceil(x.measureText(text||" ").width)+(o.bg?34:10)),h=(o.px||40)*1.5;cv.width=w;cv.height=h;x.font=f;
+  if(o.bg){x.fillStyle=o.bg;const r=h/2;x.beginPath();x.moveTo(r,0);x.lineTo(w-r,0);x.arc(w-r,r,r,-Math.PI/2,Math.PI/2);x.lineTo(r,h);x.arc(r,r,r,Math.PI/2,Math.PI*1.5);x.fill();
+    if(o.stroke){x.strokeStyle=o.stroke;x.lineWidth=4;x.stroke();}}
+  x.fillStyle=o.col||CS.fg;x.textAlign="center";x.textBaseline="middle";x.fillText(text||"",w/2,h/2+2);
+  if(sp.material.map)sp.material.map.dispose();sp.material.map=new THREE.CanvasTexture(cv);sp.material.map.anisotropy=4;sp.material.needsUpdate=true;
+  const H=o.size||.4;sp.scale.set(H*w/h,H,1);}
+const tcol=T=>new THREE.Color(tempCol(T));
+function disposeTree(o){o.traverse(c=>{if(c.geometry)c.geometry.dispose();if(c.material){const ms=Array.isArray(c.material)?c.material:[c.material];ms.forEach(m=>{if(m.map)m.map.dispose();m.dispose();});}});}
+function sh3dBuild(){
+  if(S3.root){S3.scene.remove(S3.root);disposeTree(S3.root);}
+  const lay=L3(),cy=lay.cy,root=new THREE.Group();S3.root=root;S3.lay=lay;S3.scene.add(root);S3.scene.background=new THREE.Color(CS.bg);
+  S3.pipes={};S3.knobs={};S3.pills={};S3.nud={};S3.arrows={};S3.parts=[];S3.blame=[];
+  const std=(c,o={})=>new THREE.MeshStandardMaterial(Object.assign({color:c,roughness:.45,metalness:.08},o));
+  // floor grid for depth
+  const grid=new THREE.GridHelper(26,26,new THREE.Color(CS.grid),new THREE.Color(CS.grid));grid.position.y=-(lay.h/2)/40-.6;grid.material.transparent=true;grid.material.opacity=.35;root.add(grid);
+  // tanks
+  [[lay.tanks[0],THOT,"Hot",CS.ink],[lay.tanks[1],TCOLD,"Cold",CS.neg]].forEach(([[x,y],T,n,c])=>{const p=P3(x,y,cy);
+    const tank=new THREE.Mesh(new THREE.CylinderGeometry(.95,.95,1.5,40),std(c,{transparent:true,opacity:.9}));tank.position.copy(p);root.add(tank);
+    const cap=new THREE.Mesh(new THREE.CylinderGeometry(1,1,.12,40),std(CS.surface));cap.position.set(p.x,p.y+.8,p.z);root.add(cap);
+    const lb=txtSprite(`${n} ${T} °C`,{size:.5,bold:true,col:CS.fg});lb.position.set(p.x,p.y+1.35,p.z);root.add(lb);});
+  // pipes: a glass tube with water particles inside, plus a blame-particle stream
+  lay.pipes.forEach(pp=>{const curve=pathCurve(pp.d,cy,pp.z);const len=curve.getLength();
+    const mat=std(CS.grid,{transparent:true,opacity:.55,roughness:.15,metalness:.05,depthWrite:false});
+    const mesh=new THREE.Mesh(new THREE.TubeGeometry(curve,80,pp.thin?.09:.14,12,false),mat);root.add(mesh);
+    const n=Math.max(6,Math.round(len*2.2)),pm=new THREE.InstancedMesh(new THREE.SphereGeometry(1,10,8),new THREE.MeshBasicMaterial(),n);
+    const bn=Math.max(4,Math.round(len*1.2)),bm=new THREE.InstancedMesh(new THREE.SphereGeometry(1,12,10),new THREE.MeshBasicMaterial({color:CS.accent}),bn);bm.visible=false;
+    root.add(pm);root.add(bm);
+    S3.pipes[pp.k]={curve,mesh,mat,pm,n,bm,bn,thin:pp.thin,share:1,T:20,len,off:Math.random()};});
+  // knobs
+  lay.knobs.forEach(kn=>{const g=new THREE.Group(),p=P3(kn.x,kn.y,cy),R=.9*kn.s;g.position.copy(p);root.add(g);
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(R,R,.55,48),std(CS.surface));body.rotation.x=Math.PI/2;g.add(body);
+    const face=new THREE.Mesh(new THREE.CylinderGeometry(R*.6,R*.66,.28,40),std(CS.surface,{roughness:.3}));face.rotation.x=Math.PI/2;face.position.z=.4;g.add(face);
+    const track=new THREE.Mesh(new THREE.TorusGeometry(R*.82,.04,8,64,Math.PI*1.5),new THREE.MeshBasicMaterial({color:CS.grid}));track.rotation.z=-Math.PI/4;track.position.z=.29;g.add(track);
+    const arc=new THREE.Mesh(new THREE.TorusGeometry(R*.82,.06,8,64,.01),new THREE.MeshBasicMaterial({color:CS.fg}));arc.position.z=.3;g.add(arc);
+    const piv=new THREE.Group();piv.position.z=.56;g.add(piv);const ptr=new THREE.Mesh(new THREE.BoxGeometry(.1*kn.s+.02,R*.55,.08),new THREE.MeshBasicMaterial({color:CS.fg}));ptr.position.y=R*.28;piv.add(ptr);
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(R*1.06,.06,8,64),new THREE.MeshBasicMaterial({color:CS.accent}));ring.visible=false;g.add(ring);
+    const nm=txtSprite(kn.name,{size:.44*Math.max(kn.s,.9),bold:true});nm.position.set(0,-R-.45,.4);g.add(nm);
+    const vl=txtSprite("",{size:.38*Math.max(kn.s,.9),mono:true,col:CS.muted});vl.position.set(0,-R-.9,.4);g.add(vl);
+    body.userData.k=kn.k;S3.knobs[kn.k]={g,body,hit:body,arc,piv,ring,vl,R};
+    // nudge arrow (shown after the backward pass)
+    const ag=new THREE.Group();ag.visible=false;g.add(ag);const am=new THREE.MeshBasicMaterial({color:CS.accent});
+    const at=new THREE.Mesh(new THREE.TorusGeometry(R*1.32,.06,8,40,Math.PI*.7),am);at.rotation.z=Math.PI*.15;ag.add(at);
+    const tip=new THREE.Mesh(new THREE.ConeGeometry(.15,.32,16),am);const ta=Math.PI*.85;tip.position.set(Math.cos(ta)*R*1.32,Math.sin(ta)*R*1.32,0);tip.rotation.z=ta;ag.add(tip);
+    S3.arrows[kn.k]=ag;});
+  if(SH.mode===2&&SH.share){const a=S3.knobs.a.g.position,c=S3.knobs.c.g.position;const l=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,a.distanceTo(c)-2,8),new THREE.MeshBasicMaterial({color:CS.accent}));l.position.set(a.x,(a.y+c.y)/2,.3);root.add(l);}
+  // blame pills and nudge labels
+  Object.entries(lay.pills).forEach(([id,[x,y]])=>{const sp=txtSprite("",{size:.4,bg:CS.accent,col:CS.surface,mono:true});sp.position.copy(P3(x,y,cy,1.15));sp.visible=false;root.add(sp);S3.pills[id]=sp;});
+  Object.entries(lay.nud).forEach(([k,[x,y]])=>{const sp=txtSprite("",{size:.4,col:CS.accent,bold:true,mono:true,bg:CS.surface});sp.position.copy(P3(x,y,cy,1.3));sp.visible=false;root.add(sp);S3.nud[k]=sp;});
+  lay.heads.forEach(([x,y,t])=>{const sp=txtSprite(t,{size:.3,mono:true,col:CS.muted});sp.position.copy(P3(x,y,cy,0));root.add(sp);});
+  // shower head with falling drops
+  const [hx,hy]=lay.head,o=P3(hx,hy,cy),hp=new THREE.CurvePath(),q1=o.clone().add(new THREE.Vector3(.7,0,0)),q2=q1.clone().add(new THREE.Vector3(0,.75,0));
+  hp.add(new THREE.LineCurve3(o,q1));hp.add(new THREE.LineCurve3(q1,q2));root.add(new THREE.Mesh(new THREE.TubeGeometry(hp,20,.11,10,false),std(CS.muted)));
+  S3.headMat=std(CS.ink,{roughness:.3});const head=new THREE.Mesh(new THREE.CylinderGeometry(.4,.85,.35,40),S3.headMat);head.position.set(q2.x,q2.y+.05,q2.z);root.add(head);
+  S3.head=head.position.clone();
+  S3.drops=new THREE.InstancedMesh(new THREE.SphereGeometry(1,8,6),new THREE.MeshBasicMaterial(),70);root.add(S3.drops);
+  S3.dropSt=[...Array(70)].map(()=>({x:(Math.random()-.5)*1.2,z:(Math.random()-.5)*1.2,y:-Math.random()*3,v:2+Math.random()*1.5}));
+  S3.tLab=txtSprite("",{size:.62,bold:true});S3.tLab.position.set(S3.head.x,S3.head.y+1.05,0);root.add(S3.tLab);
+  S3.tgtLab=txtSprite("",{size:.42,col:CS.muted});S3.tgtLab.position.set(S3.head.x,S3.head.y-3.55,0);root.add(S3.tgtLab);
+  S3.tgt2=txtSprite("",{size:.42,col:CS.fg,bold:true});S3.tgt2.position.set(S3.head.x,S3.head.y-4.05,0);root.add(S3.tgt2);
+  // camera framing
+  const dz=SH.mode===3?23:19;S3.cam.position.set(-2.4,3.6,dz);S3.ctl.target.set(.2,-.4,0);S3.ctl.update();
+  shWrap().style.aspectRatio=SH.mode===3?"760 / 560":"760 / 470";sh3dResize();
+  S3.key=SH.mode+"|"+SH.share+"|"+CS.bg;}
+function sh3dSync(){
+  if(!S3.ok)return;
+  if(S3.key!==SH.mode+"|"+SH.share+"|"+CS.bg)sh3dBuild();
+  const m=SH.mode,st=SH.stage,f=shForward(),{e,g,d}=shDeltas(),f2=v=>v.toFixed(2);
+  const P=S3.pipes,setP=(k,T,share)=>{const p=P[k];if(!p)return;p.T=T;p.share=share;p.mat.color.set(tempCol(T));p.pm.material.color.set(tempCol(T));};
+  const setK=(k,v,txt,hot,T)=>{const o=S3.knobs[k];if(!o)return;o.piv.rotation.z=-(-135+270*v)*Math.PI/180;
+    o.arc.geometry.dispose();o.arc.geometry=new THREE.TorusGeometry(o.R*.82,.06,8,64,Math.max(.01,Math.PI*1.5*v));o.arc.rotation.z=(225-270*v)*Math.PI/180;
+    o.ring.visible=!!hot;setTxt(o.vl,txt);if(T!=null)o.body.material.color.set(tempCol(T)).lerp(new THREE.Color(CS.surface),.55);};
+  let flows={},stages;
+  if(m===3){const D=SH.D,w=[D.c*D.b1,D.c*(1-D.b1)+(1-D.c)*D.b2,(1-D.c)*(1-D.b2)];
+    [1,2,3].forEach(i=>{setP("hot"+i,THOT,D["a"+i]*w[i-1]);setP("cold"+i,TCOLD,(1-D["a"+i])*w[i-1]);});
+    setP("m1v1",f.T1[0],D.c*D.b1);setP("m2v1",f.T1[1],D.c*(1-D.b1));setP("m2v2",f.T1[1],(1-D.c)*D.b2);setP("m3v2",f.T1[2],(1-D.c)*(1-D.b2));
+    setP("v1o",f.T2[0],D.c);setP("v2o",f.T2[1],1-D.c);setP("out",f.T,1);
+    setK("a1",D.a1,`${f.T1[0].toFixed(1)} °C`,st>=3,f.T1[0]);setK("a2",D.a2,`${f.T1[1].toFixed(1)} °C`,st>=3,f.T1[1]);setK("a3",D.a3,`${f.T1[2].toFixed(1)} °C`,st>=3,f.T1[2]);
+    setK("b1",D.b1,`${f.T2[0].toFixed(1)} °C`,st>=2,f.T2[0]);setK("b2",D.b2,`${f.T2[1].toFixed(1)} °C`,st>=2,f.T2[1]);setK("c",D.c,`${f.T.toFixed(1)} °C`,st>=1,f.T);
+    stages={err:[0,`error ${e>=0?"+":"−"}${Math.abs(e).toFixed(2)}°`],c:[1,`∂T/∂c = ${g.c.toFixed(1)}`],vc1:[1,`× ${f2(D.c)}`],vc2:[1,`× ${f2(1-D.c)}`],
+      b1:[2,`∂T/∂b₁ = ${f2(D.c)} × ${(f.T1[0]-f.T1[1]).toFixed(0)} = ${g.b1.toFixed(1)}`],b2:[2,`∂T/∂b₂ = ${f2(1-D.c)} × ${(f.T1[1]-f.T1[2]).toFixed(0)} = ${g.b2.toFixed(1)}`],
+      m11:[2,`× ${f2(g.p[0][0])}`],m21:[2,`× ${f2(g.p[1][0])}`],m22:[2,`× ${f2(g.p[1][1])}`],m32:[2,`× ${f2(g.p[2][0])}`],
+      a1:[3,`∂T/∂a₁ = 40 × ${f2(g.g1[0])} = ${g.a1.toFixed(1)}`],a2:[3,`∂T/∂a₂ = 40 × (${f2(g.p[1][0])} + ${f2(g.p[1][1])}) = ${g.a2.toFixed(1)}`],a3:[3,`∂T/∂a₃ = 40 × ${f2(g.g1[2])} = ${g.a3.toFixed(1)}`]};
+    flows={out:0,v1o:1,v2o:1,m1v1:2,m2v1:2,m2v2:2,m3v2:2};
+    K3.forEach(k=>{const show=st>=4;S3.nud[k].visible=show;if(show)setTxt(S3.nud[k],`${d[k]>=0?"↻ up":"↺ down"} ${sgn(d[k])}`);const a=S3.arrows[k];a.visible=show;a.scale.x=d[k]>=0?-1:1;});}
+  else{const two=m===2,c=SH.share?SH.a:SH.c;
+    if(two){setP("hotA",THOT,SH.a*SH.b);setP("coldA",TCOLD,(1-SH.a)*SH.b);setP("hotB",THOT,c*(1-SH.b));setP("coldB",TCOLD,(1-c)*(1-SH.b));setP("outA",f.TA,SH.b);setP("outB",f.TB,1-SH.b);setP("out",f.T,1);}
+    else{setP("hotA",THOT,SH.a);setP("coldA",TCOLD,1-SH.a);setP("direct",f.TA,1);}
+    const last=two?3:2;
+    setK("a",SH.a,two?`a = ${SH.a.toFixed(3)}`:`a = ${SH.a.toFixed(3)}`,st>=(two?2:1),f.TA);
+    if(two){setK("c",c,SH.share?"shares knob a":`c = ${SH.c.toFixed(3)}`,st>=2,f.TB);setK("b",SH.b,`b = ${SH.b.toFixed(3)} to A`,st>=1,f.T);}
+    stages={err:[0,`error ${e>=0?"+":"−"}${Math.abs(e).toFixed(2)}°`]};
+    if(two){Object.assign(stages,{b:[1,`∂T/∂b = TA − TB = ${g.b.toFixed(1)}`],pa:[1,`× b = ${SH.b.toFixed(2)}`],pb:[1,`× (1 − b) = ${(1-SH.b).toFixed(2)}`],
+      a:[2,SH.share?`∂T/∂a = ${g.gA.toFixed(1)} + ${g.gC.toFixed(1)} = ${g.a.toFixed(1)}`:`∂T/∂a = ${SH.b.toFixed(2)} × 40 = ${g.a.toFixed(1)}`]});
+      if(!SH.share)stages.c=[2,`∂T/∂c = ${(1-SH.b).toFixed(2)} × 40 = ${g.c.toFixed(1)}`];flows={out:0,outA:1,outB:1};}
+    else{stages.a=[1,"∂T/∂a = 40"];flows={direct:0};}
+    Object.keys(S3.nud).forEach(k=>{const v=d[k],show=st>=last&&v!=null&&!(SH.share&&k==="c");S3.nud[k].visible=show;if(show)setTxt(S3.nud[k],`${v>=0?"↻ turn up":"↺ turn down"} ${sgn(v)}`);
+      const a=S3.arrows[k];if(a){a.visible=show;a.scale.x=v>=0?-1:1;}});}
+  Object.entries(S3.pills).forEach(([id,sp])=>{const s=stages[id];const show=!!s&&st>=s[0];sp.visible=show;if(s){
+    sp.userData.o.bg=id==="err"?CS.fg:/^(vc|m\d|p[ab])/.test(id)?CS.surface:CS.accent;sp.userData.o.col=/^(vc|m\d|p[ab])/.test(id)?CS.accent:CS.surface;sp.userData.o.stroke=/^(vc|m\d|p[ab])/.test(id)?CS.accent:null;setTxt(sp,s[1]);}});
+  Object.entries(P).forEach(([k,p])=>{p.bm.visible=flows[k]!=null&&st>=flows[k];});
+  // radius follows the share of water each pipe carries (rebuilt only when it changes)
+  Object.values(P).forEach(p=>{const r=(p.thin?.05:.07)+(p.thin?.08:.13)*p.share;if(Math.abs((p.r||0)-r)>.004){p.r=r;p.mesh.geometry.dispose();p.mesh.geometry=new THREE.TubeGeometry(p.curve,80,r,12,false);}});
+  S3.headMat.color.set(tempCol(f.T));S3.drops.material.color.set(tempCol(f.T));
+  S3.tLab.userData.o.col=tempCol(f.T);setTxt(S3.tLab,`${f.T.toFixed(1)} °C`);
+  setTxt(S3.tgtLab,`want ${SH.target.toFixed(0)} °C`);setTxt(S3.tgt2,Math.abs(e)<.05?"just right":e<0?`${(-e).toFixed(1)}° too cold`:`${e.toFixed(1)}° too hot`);
+  sh3dStart();}
+const dmy3=typeof THREE!=="undefined"?new THREE.Object3D():null;
+function sh3dFrame(now){
+  S3.raf=0;if(!S3.ok||$("#shower").hidden)return;
+  const dt=Math.min(.05,(now-(S3.last||now))/1000);S3.last=now;const t=now/1000,mv=reduced?0:1;
+  Object.values(S3.pipes).forEach(p=>{
+    const sp=(.06+.22*p.share)*mv,rad=(p.thin?.05:.065)+.035*p.share;
+    for(let i=0;i<p.n;i++){const u=((i/p.n+p.off+t*sp/Math.max(p.len/6,.4))%1+1)%1,q=p.curve.getPointAt(u);dmy3.position.copy(q);const s=p.share<.02?0:rad;dmy3.scale.set(s,s,s);dmy3.updateMatrix();p.pm.setMatrixAt(i,dmy3.matrix);}
+    p.pm.instanceMatrix.needsUpdate=true;
+    if(p.bm.visible){for(let i=0;i<p.bn;i++){const u=((i/p.bn-t*.35*(mv||0)/Math.max(p.len/6,.4)+p.off)%1+1)%1,q=p.curve.getPointAt(u);dmy3.position.copy(q);dmy3.scale.set(.11,.11,.11);dmy3.updateMatrix();p.bm.setMatrixAt(i,dmy3.matrix);}p.bm.instanceMatrix.needsUpdate=true;}});
+  S3.dropSt.forEach((s,i)=>{s.y-=s.v*dt*mv;if(s.y<-3.1){s.y=0;s.x=(Math.random()-.5)*1.2;s.z=(Math.random()-.5)*1.2;}
+    dmy3.position.set(S3.head.x+s.x*(1+(-s.y)*.12),S3.head.y-.25+s.y,s.z*(1+(-s.y)*.12));dmy3.scale.set(.05,.09,.05);dmy3.updateMatrix();S3.drops.setMatrixAt(i,dmy3.matrix);});
+  S3.drops.instanceMatrix.needsUpdate=true;
+  Object.values(S3.arrows).forEach(a=>{if(a.visible)a.rotation.z=Math.sin(t*2.2)*.12*mv;});
+  S3.ctl.update();S3.R.render(S3.scene,S3.cam);
+  S3.raf=requestAnimationFrame(sh3dFrame);}
+function sh3dStart(){if(S3.ok&&!S3.raf&&!$("#shower").hidden)S3.raf=requestAnimationFrame(sh3dFrame);}
+function sh3dStop(){if(S3.raf){cancelAnimationFrame(S3.raf);S3.raf=0;}}
+/* knob sliders in the panel: precise and keyboard-friendly control of the same knobs */
+function shKnobList(){if(SH.mode===3)return K3.map(k=>[k,{a1:"Mixer a₁",a2:"Mixer a₂",a3:"Mixer a₃",b1:"Valve b₁",b2:"Valve b₂",c:"Output valve c"}[k]]);
+  if(SH.mode===1)return [["a","Knob a"]];return SH.share?[["a","Shared knob a"],["b","Valve b"]]:[["a","Mixer A · a"],["c","Mixer B · c"],["b","Valve b"]];}
+function shKnobBuild(){const w=$("#shKnobs"),key=SH.mode+"|"+SH.share;if(w.dataset.key===key)return;w.dataset.key=key;
+  w.innerHTML=shKnobList().map(([k,n])=>`<div class="ctl"><label for="kn_${k}">${n} <b id="knv_${k}"></b></label><input id="kn_${k}" type="range" min="0" max="1" step="0.005"></div>`).join("");
+  shKnobList().forEach(([k])=>{$("#kn_"+k).oninput=e=>{stopAuto();setKnob(k,+e.target.value);};});}
+function shKnobSync(){shKnobBuild();shKnobList().forEach(([k])=>{const v=getK(k),i=$("#kn_"+k);if(i&&document.activeElement!==i)i.value=v;const b=$("#knv_"+k);if(b)b.textContent=v.toFixed(3);});}
+
 bindShower();
 
 /* ================= Boot ================= */
@@ -1004,7 +1182,7 @@ else{try{initGL();}catch(err){GL=false;console.error(err);if(canvas)canvas.style
   const d=document.createElement("div");d.className="glerr";d.textContent="The 3D view couldn't start ("+(err&&err.message||err)+"). The panel, feature atlas and shower lab still work.";stageEl.appendChild(d);}}
 redrawPad();preset(2);showSections();requestAnimationFrame(loop);
 function route(){const h=location.hash,a=h==="#atlas",w=h==="#shower";$("#atlas").hidden=!a;$("#shower").hidden=!w;$(".app").hidden=a||w;
-  if(!w)stopAuto();
+  if(!w){stopAuto();sh3dStop();}
   if(a){renderAtlas();window.scrollTo(0,0);}else if(w){renderShower();window.scrollTo(0,0);}else{resize();refresh();}}
 window.addEventListener("hashchange",route);route();
 $$(".jump button").forEach(b=>b.onclick=()=>document.getElementById(b.dataset.j).scrollIntoView({behavior:reduced?"auto":"smooth"}));

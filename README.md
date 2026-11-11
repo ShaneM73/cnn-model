@@ -44,10 +44,14 @@ All 36 convolution filters side by side, grouped by layer:
 
 Back-propagation explained with a shower. The shower only tells you "too hot" or "too cold"; the backward pass works out how much each knob is to blame, then every knob is turned a little at the same time.
 
+The plumbing is a 3D scene: glass pipes with water flowing through them, coloured by temperature and sized by how much of the shower's water each one carries. Drag a knob up or down to turn it, drag anywhere else to orbit. During the backward pass, teal beads run backwards through the pipes and each stage's chain-rule product floats beside it. Sliders in the panel give exact control of every knob.
+
 - **One knob**, **two stages**, and a **deep three-layer** shower (3 mixers → 2 valves → 1 output valve), with the blame shown travelling back stage by stage and every chain-rule product written out.
 - Ten experiments: the worked example, blame shrinking through stages, a shut valve (a ReLU at zero), learning rate too large, shared knobs (convolution weight sharing), blame adding where paths meet, vanishing gradients, and many equally good solutions.
 
-![The deep shower mid backward pass](docs/screenshots/shower-deep.png)
+![The 3D shower after a backward pass](docs/screenshots/shower-3d.png)
+
+![The deep three-layer shower](docs/screenshots/shower-deep.png)
 
 ---
 

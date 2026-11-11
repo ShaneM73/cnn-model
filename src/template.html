@@ -233,7 +233,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 
 /* ---------- Shower lab ---------- */
 .links{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
-.shgrid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:22px;align-items:start}
+.shgrid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);gap:22px;align-items:start}
 #shSvg{width:100%;height:auto;background:var(--bg);border-radius:12px;touch-action:none}
 #shSvg text{font-family:var(--f-mono);font-size:13px;fill:var(--fg);text-anchor:middle}
 #shSvg .sub{fill:var(--muted);font-size:12px}
@@ -270,6 +270,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 #shSvg .drop{stroke-width:3;stroke-linecap:round;opacity:.85}
 #shSvg .bigT{font:700 26px var(--f-display);transition:fill .3s}
 #shChart{width:100%;height:150px}
+.sh3dwrap{position:relative;width:100%;aspect-ratio:760/470;border-radius:12px;overflow:hidden;background:var(--bg)}
+#sh3d{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.knobs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px}
 .readout .cold{color:var(--neg);font-weight:500}
 .readout .hot{color:var(--ink);font-weight:500}
 .tries{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px;max-width:90ch}
@@ -451,8 +454,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     <section class="gs wide">
       <div class="shgrid">
         <div class="sec" style="gap:8px">
+          <div class="sh3dwrap" id="sh3dWrap" hidden><canvas id="sh3d" aria-label="3D shower: drag a knob up or down to turn it, drag anywhere else to orbit"></canvas></div>
           <svg id="shSvg" viewBox="0 0 760 440" role="img" aria-label="Plumbing: hot and cold water feed two mixers, a valve blends them, the shower shows the temperature"></svg>
-          <p class="cap">Drag a knob up or down (or focus it and use the arrow keys). Colour is temperature; pipe width shows how the valve splits the flow. Teal dashes running backwards are the blame signal.</p>
+          <p class="cap">Drag a knob up or down to turn it; drag anywhere else to orbit, scroll to zoom. Water colour is temperature and pipe thickness is how much of the shower's water flows through it. Teal beads running backwards are the blame signal.</p>
         </div>
         <div class="sec">
           <div class="row" role="group" aria-label="How many layers">
@@ -460,6 +464,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
             <button class="btn" id="shMode2" aria-pressed="true">Two stages · 2 layers</button>
             <button class="btn" id="shMode3" aria-pressed="false">Deep · 3 layers</button>
           </div>
+          <div class="knobs" id="shKnobs" aria-label="Knob settings"></div>
           <label class="check" id="shShareWrap" for="shShare"><input type="checkbox" id="shShare"> One knob drives both mixers (like a convolution filter reused everywhere)</label>
           <div class="ctl"><label for="shTgt">Wanted temperature <b id="shTgtv"></b></label><input id="shTgt" type="range" min="25" max="55" step="1" value="38"></div>
           <div class="ctl"><label for="shLR">Step size (learning rate) <b id="shLRv"></b></label><input id="shLR" type="range" min="0.0001" max="0.004" step="0.0001" value="0.001">
