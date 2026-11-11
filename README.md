@@ -1,12 +1,15 @@
 # Inside a CNN
 
+### [▶ Launch the live demo](https://shanem73.github.io/cnn-model/)
+
+[3D explorer](https://shanem73.github.io/cnn-model/) · [Feature atlas](https://shanem73.github.io/cnn-model/#atlas) · [Shower lab](https://shanem73.github.io/cnn-model/#shower)
+
 An interactive 3D explorer of a small, **really trained** convolutional neural network. Draw a shape and watch every layer respond: a 3×3 window sliding over the pixels, edge detectors in layer 1, corners and curves in layer 2, whole shape parts in layer 3, and the vote that picks the answer.
 
 It comes with two companion views for teaching: a **Feature atlas** that lays out what all 36 filters respond to, and a **Shower lab** that explains back-propagation with hot and cold water.
 
 ![The explorer: a drawn square passing through the network](docs/screenshots/explorer-draw.png)
 
-**Live demo:** https://shanem73.github.io/cnn-model/
 
 ---
 
