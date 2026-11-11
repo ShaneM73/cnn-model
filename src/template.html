@@ -35,6 +35,8 @@ button:focus-visible,input:focus-visible,a:focus-visible,canvas:focus-visible{ou
 .stage{position:relative;min-width:0;min-height:0;overflow:hidden}
 #gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
 #gl:active{cursor:grabbing}
+.glov{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.gll{position:absolute;left:0;top:0;white-space:nowrap;font:600 14px var(--f-display);line-height:1.2;will-change:transform;-webkit-font-smoothing:antialiased}
 .hint{position:absolute;left:16px;bottom:12px;font:12px var(--f-mono);color:var(--muted);pointer-events:none}
 .glerr{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--muted)}
 .signal{position:absolute;top:12px;left:16px;right:16px;display:flex;flex-wrap:wrap;gap:6px;pointer-events:none}
@@ -275,6 +277,11 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .sh3dov{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .hl{position:absolute;left:0;top:0;white-space:nowrap;line-height:1.3;will-change:transform;-webkit-font-smoothing:antialiased}
 .hl.pill{border-radius:999px;padding:1px 8px}
+.shkey{background:var(--bg);border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.5}
+.shkey summary{cursor:pointer;font:600 13.5px var(--f-body);color:var(--accent)}
+.shkey #shKey{margin-top:6px}
+.shkey .f{font:12.5px var(--f-mono);color:var(--muted);margin:2px 0 8px 10px}
+.shkey .note{margin:4px 0 0;font-size:12.5px}
 .knobs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px}
 .readout .cold{color:var(--neg);font-weight:500}
 .readout .hot{color:var(--ink);font-weight:500}
@@ -301,6 +308,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 <div class="app">
   <div class="stage" id="stage">
     <canvas id="gl" aria-label="3D view of the convolutional network"></canvas>
+    <div class="glov" id="glOv" aria-hidden="true"></div>
     <div class="signal" id="signal" aria-hidden="true">
       <span data-g="0">Input</span><span data-g="1">Conv 1</span><span data-g="2">Pool</span><span data-g="3">Conv 2</span><span data-g="4">Pool</span><span data-g="5">Conv 3</span><span data-g="6">Max</span><span data-g="7">Output</span>
     </div>
@@ -467,6 +475,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
             <button class="btn" id="shMode2" aria-pressed="true">Two stages · 2 layers</button>
             <button class="btn" id="shMode3" aria-pressed="false">Deep · 3 layers</button>
           </div>
+          <details class="shkey" open><summary>What do a, b and c mean?</summary><div id="shKey"></div></details>
           <div class="knobs" id="shKnobs" aria-label="Knob settings"></div>
           <label class="check" id="shShareWrap" for="shShare"><input type="checkbox" id="shShare"> One knob drives both mixers (like a convolution filter reused everywhere)</label>
           <div class="ctl"><label for="shTgt">Wanted temperature <b id="shTgtv"></b></label><input id="shTgt" type="range" min="25" max="55" step="1" value="38"></div>

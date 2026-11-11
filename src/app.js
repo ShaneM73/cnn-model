@@ -180,14 +180,17 @@ const avgY=k=>3.0-k*.4, outY=k=>2.4-k*1.2;
 let downAt=null;
 function glowTex(){const cv=document.createElement("canvas");cv.width=cv.height=128;const x=cv.getContext("2d");const g=x.createRadialGradient(64,64,0,64,64,64);
   g.addColorStop(0,hexA(CS.accent,1));g.addColorStop(.3,hexA(CS.accent,.55));g.addColorStop(1,hexA(CS.accent,0));x.fillStyle=g;x.fillRect(0,0,128,128);return new THREE.CanvasTexture(cv);}
+/* 3D labels are HTML text placed over the canvas every frame, so they stay sharp on any screen */
 function makeLabel(text,pos,size,col){
-  const sp=new THREE.Sprite(new THREE.SpriteMaterial({transparent:true,depthTest:false,sizeAttenuation:false}));sp.renderOrder=20;
-  sp.position.set(...pos);sp.userData={text,size,col};scene.add(sp);drawLabel(sp);return sp;}
-function drawLabel(sp){const {text,size,col}=sp.userData;const cv=document.createElement("canvas");const x=cv.getContext("2d");
-  const f=`600 44px "Familjen Grotesk","Helvetica Neue",Arial,sans-serif`;x.font=f;const w=Math.max(8,Math.ceil(x.measureText(text).width)+16);
-  cv.width=w;cv.height=60;x.font=f;x.fillStyle=CS[col]||CS.fg;x.textBaseline="middle";x.textAlign="center";x.fillText(text,w/2,32);
-  if(sp.material.map)sp.material.map.dispose();sp.material.map=new THREE.CanvasTexture(cv);sp.material.map.anisotropy=4;sp.material.needsUpdate=true;sp.userData.bx=size*w/60;sp.scale.set(size*w/60*LF,size*LF,1);}
+  const el=document.createElement("div");el.className="gll";$("#glOv").appendChild(el);
+  const sp={position:new THREE.Vector3(...pos),userData:{text,size,col},el,anchor:"center"};drawLabel(sp);return sp;}
+function drawLabel(sp){const {text,col}=sp.userData;sp.el.textContent=text||"";sp.el.style.color=CS[col]||CS.fg;}
 let LF=1;
+function placeGLLabels(){const w=canvas.clientWidth,h=canvas.clientHeight,v=new THREE.Vector3();
+  labels.concat(dyn).forEach(sp=>{const e=sp.el;if(!sp.userData.text){e.style.display="none";return;}
+    v.copy(sp.position).project(camera);if(v.z>1||Math.abs(v.x)>1.2||Math.abs(v.y)>1.2){e.style.display="none";return;}
+    e.style.display="";e.style.fontSize=Math.max(11.5,sp.userData.size*h*1.06*Math.max(LF,.78)).toFixed(1)+"px";
+    e.style.transform=`translate(${Math.round((v.x+1)/2*w)}px,${Math.round((1-v.y)/2*h)}px) translate(${sp.anchor==="left"?"0":"-50%"},-50%)`;});}
 function setLabel(sp,text,col){if(sp.userData.text===text&&sp.userData.col===col)return;sp.userData.text=text;if(col)sp.userData.col=col;drawLabel(sp);}
 function applyColors3D(){if(!GL)return;renderer.setClearColor(C.bg);
   planes.forEach(p=>{if(p.material.visible!==false&&p.material.color)p.material.color.copy(C.surface);});
@@ -267,7 +270,7 @@ function updateCells(){
     dummy.position.set(GR[7].x0+L/2,outY(k),0);dummy.scale.set(L,.62,.62);dummy.updateMatrix();outMesh.setMatrixAt(k,dummy.matrix);
     const hi=st==="dec"?k===dcls:k===NET.win&&!EMPTY;tmp.copy(C.bg).lerp(hi?C.accent:C.muted,hi?1:.45);outMesh.setColorAt(k,tmp);
     setLabel(dyn[k],`${GLY[k]}  ${CLS[k]}  ${EMPTY?"–":pct(NET.prob[k])}`,hi?"accent":"fg");
-    dyn[k].position.x=GR[7].x0+4.6;dyn[k].center.set(0,.5);}
+    dyn[k].position.x=GR[7].x0+4.6;dyn[k].anchor="left";}
   outMesh.instanceMatrix.needsUpdate=true;outMesh.instanceColor.needsUpdate=true;
   // frames highlight
   frames.forEach(f=>{if(f.userData.conn)return;const {gi,ch}=f.userData;
@@ -601,8 +604,8 @@ function loop(now){
       orb.position.set(x,0,0);orb.visible=true;updateCells();pills();
       if(S.follow){controls.target.lerp(new THREE.Vector3(x,0,0),.08);camera.position.lerp(new THREE.Vector3(x-9,5,12),.05);}}}
   const lf=clamp(30/camera.position.distanceTo(controls.target),.62,1);
-  if(Math.abs(lf-LF)>.005){LF=lf;labels.concat(dyn).forEach(sp=>sp.scale.set(sp.userData.bx*LF,sp.userData.size*LF,1));}
-  controls.update();renderer.render(scene,camera);}
+  LF=lf;
+  controls.update();renderer.render(scene,camera);placeGLLabels();}
 
 /* ================= Feature atlas (full-page view at #atlas) ================= */
 const FV=JSON.parse($("#fv").textContent);
@@ -969,7 +972,15 @@ function shChart(){const cv=$("#shChart"),x=cv.getContext("2d"),W=cv.width,H=cv.
 function stopAuto(){clearInterval(SH.auto);SH.auto=null;if($("#shAuto"))$("#shAuto").textContent="▶ Auto-train";}
 function backward(){const last=SH.mode===3?4:SH.mode===2?3:2;stopAuto();
   if(SH.stage>=last)SH.stage=-1;SH.stage++;drawShower();}
+const SHKEY={
+ 1:`<b>a</b> · how far the tap is turned toward hot: the share of hot water in the mix. a = 0 is all cold (20 °C), a = 1 is all hot (60 °C).<div class="f">T = 20 + 40·a</div>`,
+ 2:`<b>a</b> · mixer A's tap: its share of hot water. <b>c</b> · mixer B's tap, the same thing for the second mixer.<div class="f">T<sub>A</sub> = 20 + 40·a &nbsp; T<sub>B</sub> = 20 + 40·c</div>
+    <b>b</b> · the valve after them: the share of the shower's water that comes from mixer A; the rest, 1 − b, comes from mixer B.<div class="f">T = b·T<sub>A</sub> + (1 − b)·T<sub>B</sub></div>`,
+ 3:`<b>a₁ a₂ a₃</b> · layer 1, three mixers: each one's share of hot water.<div class="f">T<sub>i</sub> = 20 + 40·a<sub>i</sub></div>
+    <b>b₁ b₂</b> · layer 2, two valves: b₁ is the share taken from mixer 1 (the rest from mixer 2); b₂ the share from mixer 2 (the rest from mixer 3).<div class="f">V<sub>1</sub> = b₁·T<sub>1</sub> + (1−b₁)·T<sub>2</sub> &nbsp; V<sub>2</sub> = b₂·T<sub>2</sub> + (1−b₂)·T<sub>3</sub></div>
+    <b>c</b> · layer 3, the output valve: the share taken from valve 1 (the rest from valve 2). Note: here c is a valve, not a mixer.<div class="f">T = c·V<sub>1</sub> + (1−c)·V<sub>2</sub></div>`};
 function syncShowerUI(){
+  const kk=$("#shKey");if(kk)kk.innerHTML=SHKEY[SH.mode]+(SH.mode===2&&SH.share?`<p class="note">Shared knob: c is tied to a, so one knob sets both mixers.</p>`:"")+`<p class="note">Every knob runs from 0 to 1, and every knob is one <b>weight</b> of the network.</p>`;
   $("#shMode1").setAttribute("aria-pressed",SH.mode===1);$("#shMode2").setAttribute("aria-pressed",SH.mode===2);$("#shMode3").setAttribute("aria-pressed",SH.mode===3);
   $("#shShareWrap").hidden=SH.mode!==2;$("#shShare").checked=SH.share;
   $("#shLR").value=SH.lr;$("#shLRv").textContent=SH.lr.toFixed(4);$("#shTgt").value=SH.target;$("#shTgtv").textContent=SH.target+" °C";
