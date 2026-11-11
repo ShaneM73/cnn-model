@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inside a CNN</title>
+<meta name="description" content="An interactive 3D explorer of a small, real convolutional neural network: draw a shape and watch every layer respond.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Explorer = full-height 3D stage + docked panel (bottom sheet on phones). Palette and type follow Inside AlphaZero. */
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --fg:#17212b; --muted:#5b6977; --grid:#b9c3cd;
+  --accent:#0d7a84; --ink:#b97a12; --neg:#4b4fcc; --const:#6f8a3a;
+  --f-display:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1319; --surface:#161d25; --fg:#e2e8ee; --muted:#93a1ae; --grid:#3a4653;
+  --accent:#3fc4cd; --ink:#e7b04c; --neg:#9396ff; --const:#a6c46a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1319; --surface:#161d25; --fg:#e2e8ee; --muted:#93a1ae; --grid:#3a4653;
+  --accent:#3fc4cd; --ink:#e7b04c; --neg:#9396ff; --const:#a6c46a; color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.5}
+button{font-family:inherit}
+button:focus-visible,input:focus-visible,a:focus-visible,canvas:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 400px}
+.stage{position:relative;min-width:0;min-height:0;overflow:hidden}
+#gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#gl:active{cursor:grabbing}
+.hint{position:absolute;left:16px;bottom:12px;font:12px var(--f-mono);color:var(--muted);pointer-events:none}
+.glerr{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;color:var(--muted)}
+.signal{position:absolute;top:12px;left:16px;right:16px;display:flex;flex-wrap:wrap;gap:6px;pointer-events:none}
+.signal span{font:500 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:999px;background:var(--surface);color:var(--muted);border:1px solid var(--grid);transition:background .15s,color .15s,transform .15s}
+.signal span.on{background:var(--accent);border-color:var(--accent);color:var(--surface);transform:translateY(-2px) scale(1.06)}
+.signal span.done{color:var(--fg);border-color:var(--accent)}
+.scope{position:absolute;right:16px;bottom:12px;display:flex;align-items:center;gap:10px;font:11px var(--f-mono);color:var(--muted);pointer-events:none}
+.scope .bar{width:150px;height:8px;border-radius:999px;background:linear-gradient(90deg,var(--ink),var(--accent));opacity:.85}
+.theme{position:absolute;top:12px;right:16px;font:500 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:4px 9px;border-radius:999px;background:var(--surface);color:var(--muted);border:1px solid var(--grid);cursor:pointer}
+
+.panel{background:var(--surface);border-left:1px solid var(--grid);overflow-y:auto;min-width:0;padding:18px 20px 28px;display:flex;flex-direction:column;gap:16px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.eyebrow{margin:0;font:500 11px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+h1{margin:2px 0 0;font:700 30px/1.05 var(--f-display);letter-spacing:-.01em;text-wrap:balance}
+h2{margin:0;font:700 19px/1.2 var(--f-display);text-wrap:balance}
+h3{margin:0;font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.viewlink{text-decoration:none;flex:none;font:500 12.5px var(--f-body);color:var(--accent);background:transparent;border:1px solid var(--accent);border-radius:999px;padding:6px 12px;margin-top:4px;cursor:pointer}
+.viewlink:hover,.viewlink[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tabs button{font:500 12.5px var(--f-body);padding:6px 10px;border-radius:999px;border:1px solid var(--grid);background:transparent;color:var(--fg);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.ctl{display:flex;flex-direction:column;gap:6px}
+.ctl label,.lab{display:flex;justify-content:space-between;gap:12px;font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.ctl label b,.lab b{font-weight:500;color:var(--fg);letter-spacing:0;text-transform:none;font-size:12.5px;text-align:right}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.sec{display:flex;flex-direction:column;gap:14px}
+.sec p{margin:0;max-width:65ch}
+.sec p.note{color:var(--muted);font-size:12.5px}
+.readout{font:12.5px/1.6 var(--f-mono);background:var(--bg);border-radius:8px;padding:10px 12px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.readout .k{color:var(--muted)}
+.readout .hit{color:var(--accent);font-weight:500}
+.readout .ink{color:var(--ink);font-weight:500}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{font:500 12.5px var(--f-body);padding:7px 12px;border-radius:6px;border:1px solid var(--grid);background:var(--surface);color:var(--fg);cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface);min-width:84px}
+.btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.btn.glyph{font:500 16px/1 var(--f-mono);width:38px;height:34px;padding:0}
+.check{display:flex;gap:8px;align-items:center;font-size:13px}
+.check input{accent-color:var(--accent)}
+.status{font:700 22px/1.15 var(--f-display)}
+.status small{display:block;font:500 12.5px var(--f-body);color:var(--muted);margin-top:4px}
+
+.padwrap{position:relative;width:100%;max-width:340px;aspect-ratio:1}
+.padwrap canvas{position:absolute;inset:0;width:100%;height:100%;border-radius:8px}
+#pad{box-shadow:0 0 0 1px var(--grid);cursor:crosshair;touch-action:none;background:var(--bg)}
+#padOv{pointer-events:none}
+.padhint{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font:12.5px var(--f-mono);pointer-events:none;text-align:center;padding:30px}
+.seen{display:flex;gap:12px;align-items:center}
+#seen{width:84px;height:84px;border-radius:6px;image-rendering:pixelated;box-shadow:0 0 0 1px var(--grid);flex:none}
+#px{width:100%;max-width:340px;aspect-ratio:1;border-radius:8px;image-rendering:pixelated;box-shadow:0 0 0 1px var(--grid);cursor:pointer;touch-action:manipulation}
+.cap{font:12px var(--f-mono);color:var(--muted)}
+
+.bars{display:flex;flex-direction:column;gap:5px}
+.bars .b{display:grid;grid-template-columns:22px 70px minmax(0,1fr) 48px;align-items:center;gap:8px;font:12.5px var(--f-body)}
+.bars .b .g{font:500 15px/1 var(--f-mono);text-align:center;color:var(--muted)}
+.bars .b .t{height:10px;border-radius:999px;background:var(--bg);position:relative;overflow:hidden}
+.bars .b .t i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--grid);transition:width .35s cubic-bezier(.34,1.3,.64,1)}
+.bars .b.win .t i{background:var(--accent)}
+.bars .b.win .g,.bars .b.win span{color:var(--accent);font-weight:600}
+.bars .b em{font:12px var(--f-mono);font-style:normal;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.bars.click .b{cursor:pointer;border-radius:6px}
+.bars.click .b:hover{background:var(--bg)}
+.bars .b.sel{outline:1px solid var(--accent);outline-offset:2px}
+
+.kgrids{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
+.kg{display:flex;flex-direction:column;gap:4px;font:11px var(--f-mono);color:var(--muted)}
+.kg .g{display:grid;grid-template-columns:repeat(3,34px);gap:2px}
+.kg .g span{height:30px;display:grid;place-items:center;font:11px var(--f-mono);border-radius:3px;background:var(--bg);color:var(--fg);font-variant-numeric:tabular-nums}
+.kg .op{align-self:center;font:500 16px var(--f-mono);color:var(--muted);padding-top:14px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{padding:3px;border-radius:6px;border:1px solid var(--grid);background:var(--surface);cursor:pointer;line-height:0}
+.chips button[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.chips canvas{width:30px;height:30px;image-rendering:pixelated;border-radius:3px}
+.patches{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.patches canvas{width:100%;aspect-ratio:1;border-radius:4px;image-rendering:pixelated;box-shadow:0 0 0 1px var(--grid)}
+.mini-wrap{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.mini-wrap canvas{width:130px;height:130px;border-radius:6px;image-rendering:pixelated;box-shadow:0 0 0 1px var(--grid)}
+.mini-wrap .readout{flex:1;min-width:150px}
+#tuning{width:100%;height:96px}
+.badge{display:inline-block;font:500 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;border:1px solid var(--ink);color:var(--ink)}
+.scale{display:flex;flex-direction:column;gap:6px}
+.scale .s{display:grid;grid-template-columns:78px minmax(0,1fr) 64px;gap:8px;align-items:center;font:12px var(--f-mono);color:var(--muted);cursor:pointer;border-radius:6px;padding:2px 0}
+.scale .s:hover{background:var(--bg)}
+.scale .s .t{height:10px;background:var(--bg);border-radius:3px;position:relative}
+.scale .s .t i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--grid)}
+.scale .s.on{color:var(--fg)}
+.scale .s.on .t i{background:var(--ink)}
+.scale .s b{font-weight:500;text-align:right;color:var(--fg);font-variant-numeric:tabular-nums}
+.contrib{display:flex;flex-direction:column;gap:4px}
+.contrib button{display:grid;grid-template-columns:minmax(0,1fr) 120px 52px;gap:8px;align-items:center;font:12.5px var(--f-body);text-align:left;background:transparent;border:0;padding:4px 6px;border-radius:6px;color:var(--fg);cursor:pointer}
+.contrib button:hover{background:var(--bg)}
+.contrib .t{height:10px;position:relative;background:var(--bg);border-radius:3px}
+.contrib .t:before{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted)}
+.contrib .t i{position:absolute;top:0;bottom:0;border-radius:3px}
+.contrib em{font:12px var(--f-mono);font-style:normal;text-align:right;font-variant-numeric:tabular-nums}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font:12px var(--f-mono);color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.facts div{background:var(--bg);border-radius:10px;padding:10px 12px}
+.facts b{display:block;font:700 22px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.facts span{font-size:12px;color:var(--muted)}
+.rule{margin:0;padding:10px 12px;border-left:3px solid var(--accent);background:var(--bg);border-radius:0 8px 8px 0;font-size:13.5px}
+
+
+/* ---------- Feature atlas ---------- */
+.link{font-size:13px;color:var(--accent);text-decoration:none}
+.link:hover{text-decoration:underline}
+.atlas{min-height:100%;padding:28px 16px 56px}
+.atlas .wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.ghead{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.ghead h1{font-size:clamp(34px,6vw,54px)}
+.ghead p{margin:8px 0 0;max-width:62ch;color:var(--muted);font-size:15px}
+.ghead .viewlink{text-decoration:none}
+.jump{display:flex;gap:6px;flex-wrap:wrap;position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0}
+.jump button{font:500 12.5px var(--f-body);padding:6px 11px;border-radius:999px;border:1px solid var(--grid);background:var(--surface);color:var(--fg);cursor:pointer}
+.jump button:hover{border-color:var(--accent)}
+#atlasBody{display:flex;flex-direction:column;gap:20px}
+.gs{background:var(--surface);border:1px solid var(--grid);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:16px;scroll-margin-top:56px}
+.gs .txt{display:flex;flex-direction:column;gap:10px}
+.gs .num{font:500 12px var(--f-mono);letter-spacing:.1em;color:var(--accent);text-transform:uppercase}
+.gs h2{font-size:24px}
+.gs p{margin:0;max-width:75ch}
+.gs .rule ul{margin:6px 0;padding-left:18px}
+.howrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.howrow div{background:var(--bg);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:3px;font-size:13px}
+.howrow span{color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.stats div{background:var(--bg);border-radius:10px;padding:12px}
+.stats b{display:block;font:700 26px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.stats span{font-size:12.5px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px}
+.tile{border:1px solid var(--grid);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px;background:var(--surface)}
+.tile:hover{border-color:var(--accent)}
+.tvis{display:flex;gap:10px;align-items:flex-end}
+.tvis figure{margin:0;display:flex;flex-direction:column;gap:3px;font:10.5px var(--f-mono);color:var(--muted)}
+.tvis canvas{image-rendering:pixelated;border-radius:6px;box-shadow:0 0 0 1px var(--grid)}
+.tvis canvas.big{width:104px;height:104px}
+.tvis canvas.small{width:64px;height:64px}
+.tile h4{margin:0;font:700 15px/1.2 var(--f-display)}
+.tile h4 span{font:500 11px var(--f-mono);color:var(--accent);margin-right:4px}
+.tdesc{font-size:12.5px;color:var(--muted);margin:0}
+.shares{display:flex;gap:6px;align-items:flex-end;height:44px}
+.shares span{display:flex;flex-direction:column;align-items:center;gap:2px;font:12px var(--f-mono);color:var(--muted);width:22px}
+.shares i{display:block;width:12px;border-radius:2px;background:var(--grid)}
+.shares span.on{color:var(--accent);font-weight:600}
+.shares span.on i{background:var(--accent)}
+.tune{width:100%;height:50px}
+.ko{font-size:12.5px;margin:0}
+.ko.bad b{color:var(--neg)}
+.tile .btn{align-self:flex-start;padding:5px 10px;font-size:12px}
+.finds{margin:6px 0 8px;padding-left:18px}
+.mwrap{overflow-x:auto;padding-bottom:6px}
+.matrix{display:grid;gap:2px;align-items:center;width:max-content}
+.mh{font:11px var(--f-mono);color:var(--muted)}
+.mcat{font:500 10.5px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:visible;height:16px}
+.mcat.first{border-left:2px solid var(--grid);padding-left:4px}
+.mstim{padding:0;border:1px solid var(--grid);border-radius:4px;background:var(--surface);cursor:pointer;line-height:0;width:34px;height:34px;display:grid;place-items:center}
+.mstim:hover{border-color:var(--accent)}
+.mstim canvas{width:30px;height:30px;image-rendering:pixelated;border-radius:3px}
+.mlayer{font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink);padding:10px 0 2px}
+.mlab{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
+.mlab span{font:11px var(--f-mono);color:var(--accent)}
+.mcell{width:34px;height:22px;border:0;border-radius:3px;padding:0;cursor:pointer}
+.mcell.best{box-shadow:inset 0 0 0 2px var(--ink)}
+.mcell:hover{outline:2px solid var(--fg)}
+.kogrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px}
+.kleft{display:flex;flex-direction:column;gap:12px}
+#koIn{width:84px;height:84px;image-rendering:pixelated;border-radius:6px;box-shadow:0 0 0 1px var(--grid)}
+.kex{display:flex;gap:6px;flex-wrap:wrap}
+.kl{display:flex;flex-direction:column;gap:4px;margin-bottom:6px}
+.kchips{display:flex;gap:4px;flex-wrap:wrap}
+.kchips button{font:500 12px var(--f-mono);width:32px;height:28px;border-radius:6px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--fg);cursor:pointer}
+.kchips button[aria-pressed="true"]{background:transparent;border-color:var(--grid);color:var(--muted);text-decoration:line-through}
+.kright{display:flex;flex-direction:column;gap:8px}
+.kbars{display:flex;flex-direction:column;gap:6px}
+.kbars .b{display:grid;grid-template-columns:22px 70px minmax(0,1fr) 52px;align-items:center;gap:8px;font-size:13px}
+.kbars .g{font:500 15px var(--f-mono);text-align:center;color:var(--muted)}
+.kbars .t{height:12px;border-radius:999px;background:var(--bg);position:relative;overflow:hidden}
+.kbars .t i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:var(--grid)}
+.kbars .t u{position:absolute;left:0;top:0;bottom:0;border-radius:999px;border:1.5px solid var(--fg);opacity:.5}
+.kbars .b.win .t i{background:var(--accent)}
+.kbars .b.win span{color:var(--accent);font-weight:600}
+.kbars em{font:12px var(--f-mono);font-style:normal;text-align:right;color:var(--muted)}
+.ktable{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.krow{display:grid;grid-template-columns:22px 70px minmax(0,1fr) 110px;gap:8px;align-items:center;font-size:13px;padding:6px 8px;background:var(--bg);border-radius:8px}
+.krow .g{font:500 15px var(--f-mono);text-align:center;color:var(--muted)}
+.krow em{font:12.5px var(--f-mono);font-style:normal;text-align:right}
+.krow b.neg{color:var(--neg)}
+.dreams{display:flex;gap:16px;flex-wrap:wrap}
+.dreams figure{margin:0;display:flex;flex-direction:column;gap:6px;align-items:center;font:13px var(--f-body)}
+.dreams canvas{width:140px;height:140px;image-rendering:pixelated;border-radius:8px;box-shadow:0 0 0 1px var(--grid)}
+.gfoot{color:var(--muted);font-size:12.5px;max-width:80ch}
+@media (max-width:860px){.howrow,.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.kogrid{grid-template-columns:1fr}}
+
+/* ---------- Shower lab ---------- */
+.links{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+.shgrid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:22px;align-items:start}
+#shSvg{width:100%;height:auto;background:var(--bg);border-radius:12px;touch-action:none}
+#shSvg text{font-family:var(--f-mono);font-size:13px;fill:var(--fg);text-anchor:middle}
+#shSvg .sub{fill:var(--muted);font-size:12px}
+#shSvg .thot{fill:color-mix(in srgb,var(--ink) 22%,var(--surface));stroke:var(--ink);stroke-width:2}
+#shSvg .tcold{fill:color-mix(in srgb,var(--neg) 20%,var(--surface));stroke:var(--neg);stroke-width:2}
+#shSvg .pipe{fill:none;stroke-width:10;stroke-linecap:round;transition:stroke .3s,stroke-width .3s}
+#shSvg .water{fill:none;stroke:rgba(255,255,255,.6);stroke-width:2;stroke-dasharray:2 12;stroke-linecap:round;animation:shfwd 1.2s linear infinite}
+#shSvg .flow{fill:none;stroke:var(--accent);stroke-width:4;stroke-dasharray:8 10;stroke-linecap:round;animation:shback .8s linear infinite;transition:opacity .3s}
+@keyframes shfwd{to{stroke-dashoffset:-28}}
+@keyframes shback{to{stroke-dashoffset:36}}
+#shSvg .knob{cursor:ns-resize;outline:none}
+#shSvg .kface{fill:var(--surface);stroke:var(--grid);stroke-width:2}
+#shSvg .knob:focus-visible .kface{stroke:var(--fg);stroke-width:3}
+#shSvg .knob.hot .kface{stroke:var(--accent);stroke-width:3}
+#shSvg .ktrack{fill:none;stroke:var(--grid);stroke-width:5;stroke-linecap:round}
+#shSvg .kfill{fill:none;stroke:var(--fg);stroke-width:5;stroke-linecap:round}
+#shSvg .kptr{stroke:var(--fg);stroke-width:4;stroke-linecap:round;transition:transform .25s}
+#shSvg .khub{fill:var(--fg)}
+#shSvg .klab{font-family:var(--f-body);font-weight:600}
+#shSvg .kval{fill:var(--muted);font-size:12px}
+#shSvg .pill{transition:opacity .35s}
+#shSvg .pill rect{fill:var(--accent)}
+#shSvg .pill text{fill:var(--surface);font-size:12px;font-weight:500}
+#shSvg .pill.m rect{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
+#shSvg .pill.m text{fill:var(--accent)}
+#shSvg .pill.e rect{fill:var(--fg)}
+#shSvg .nudge{fill:var(--accent);font-weight:600;text-anchor:start;font-size:12.5px}
+#shSvg .nudge.mid{text-anchor:middle}
+#shSvg .lhead{font:500 11px var(--f-mono);letter-spacing:.08em;fill:var(--muted)}
+#shSvg .pipe.thin{stroke-width:6}
+#shSvg .share{stroke:var(--accent);stroke-width:2;stroke-dasharray:4 4}
+#shSvg .hpipe{fill:none;stroke:var(--muted);stroke-width:6;stroke-linejoin:round}
+#shSvg .hhead{stroke:var(--fg);stroke-width:1.5;transition:fill .3s}
+#shSvg .drop{stroke-width:3;stroke-linecap:round;opacity:.85}
+#shSvg .bigT{font:700 26px var(--f-display);transition:fill .3s}
+#shChart{width:100%;height:150px}
+.readout .cold{color:var(--neg);font-weight:500}
+.readout .hot{color:var(--ink);font-weight:500}
+.tries{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px;max-width:90ch}
+.tries .btn{padding:3px 9px;font-size:12px;margin:0 4px}
+.maptbl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:1px;background:var(--grid);border-radius:10px;overflow:hidden;border:1px solid var(--grid)}
+.maptbl div{background:var(--surface);padding:9px 12px;font-size:13.5px}
+.maptbl .h{background:var(--bg);font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+@media (max-width:900px){.shgrid{grid-template-columns:1fr}.ghead .links{flex-direction:row;flex-wrap:wrap;align-items:flex-start}}
+@media (prefers-reduced-motion:reduce){#shSvg .water,#shSvg .flow{animation:none}}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr;grid-template-rows:minmax(0,44%) minmax(0,56%)}
+  .panel{border-left:0;border-top:1px solid var(--grid);padding:14px 16px 24px}
+  h1{font-size:24px}
+  .signal span{font-size:10px;padding:3px 7px}
+  .scope,.hint{display:none}
+}
+@media (prefers-reduced-motion:reduce){.signal span,.bars .b .t i{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage">
+    <canvas id="gl" aria-label="3D view of the convolutional network"></canvas>
+    <div class="signal" id="signal" aria-hidden="true">
+      <span data-g="0">Input</span><span data-g="1">Conv 1</span><span data-g="2">Pool</span><span data-g="3">Conv 2</span><span data-g="4">Pool</span><span data-g="5">Conv 3</span><span data-g="6">Max</span><span data-g="7">Output</span>
+    </div>
+    <div class="hint" id="hint">Drag to orbit · scroll or pinch to zoom · click a cell to see what it can see</div>
+    <div class="scope" aria-hidden="true"><span>local</span><span class="bar"></span><span>global</span></div>
+  </div>
+
+  <aside class="panel" id="panel">
+    <div class="top">
+      <div><p class="eyebrow">Convolutional neural network</p><h1>Inside a CNN</h1></div>
+      <div class="links"><a class="viewlink" href="#atlas">Feature atlas →</a><a class="viewlink" href="#shower">Shower lab →</a></div>
+    </div>
+
+    <nav class="tabs" role="tablist" aria-label="Explorer stage">
+      <button role="tab" data-stage="draw" aria-selected="true">Draw</button>
+      <button role="tab" data-stage="conv">Convolution</button>
+      <button role="tab" data-stage="l1">Layer 1 · edges</button>
+      <button role="tab" data-stage="l2">Layer 2 · parts</button>
+      <button role="tab" data-stage="l3">Layer 3 · shapes</button>
+      <button role="tab" data-stage="rf">Local → global</button>
+      <button role="tab" data-stage="dec">Decision</button>
+      <button role="tab" data-stage="about">About</button>
+    </nav>
+
+    <!-- shared 28x28 view used by every stage except Draw -->
+    <div class="sec" id="viewBlock" hidden>
+      <canvas id="px" width="280" height="280" tabindex="0" aria-label="The 28 by 28 pixels the network sees; click to choose a position"></canvas>
+      <div class="cap" id="pxCap"></div>
+    </div>
+
+    <section class="sec" data-sec="draw">
+      <div class="status" id="status"></div>
+      <div class="padwrap">
+        <canvas id="pad" width="280" height="280" aria-label="Drawing pad"></canvas>
+        <canvas id="padOv" width="280" height="280"></canvas>
+        <div class="padhint" id="padHint">Draw a plus, an X, a square, a triangle or a circle</div>
+      </div>
+      <p class="note" id="stimNote" hidden>Showing a test pattern from the probe lab, fed in as is (not rescaled). Draw on the pad to replace it.</p>
+      <div class="row" role="group" aria-label="Example shapes">
+        <button class="btn glyph" data-preset="0" title="Plus" aria-label="Draw a plus">+</button>
+        <button class="btn glyph" data-preset="1" title="Cross" aria-label="Draw a cross">×</button>
+        <button class="btn glyph" data-preset="2" title="Square" aria-label="Draw a square">□</button>
+        <button class="btn glyph" data-preset="3" title="Triangle" aria-label="Draw a triangle">△</button>
+        <button class="btn glyph" data-preset="4" title="Circle" aria-label="Draw a circle">○</button>
+        <button class="btn" id="clearBtn">Clear</button>
+      </div>
+      <div class="bars" id="predBars"></div>
+      <div class="seen"><canvas id="seen" width="28" height="28" aria-label="Network input"></canvas>
+        <p class="note">What the network actually receives: your drawing cropped, scaled to fit 20 px and centred in a 28×28 grid, the same recipe its training drawings went through.</p></div>
+      <div class="row"><button class="btn primary" id="replayBtn">▶ Replay the signal</button>
+        <label class="check" for="follow"><input type="checkbox" id="follow"> Camera follows</label></div>
+      <p>Each layer of this network is a stack of <b>feature maps</b>. Every cell in a map is computed from a small 3×3 neighbourhood of the layer before it, so early layers see tiny pieces of your stroke and later layers see whole shapes. Use the tabs to walk through it.</p>
+    </section>
+
+    <section class="sec" data-sec="conv" hidden>
+      <h2>A 3×3 window, slid everywhere</h2>
+      <p>A convolution reuses one small set of weights at every position: multiply the 9 pixels under the window by the 9 weights, add them up, add a bias, and keep the result only if it is above zero (ReLU). One filter makes one feature map.</p>
+      <div class="row" role="group" aria-label="Which convolution">
+        <button class="btn" id="cv1" aria-pressed="true">Conv 1 · on pixels</button>
+        <button class="btn" id="cv2" aria-pressed="false">Conv 2 · on 8 maps</button>
+      </div>
+      <div class="ctl"><div class="lab">Filter <b id="cvFiltName"></b></div><div class="chips" id="cvChips"></div></div>
+      <div class="ctl" id="cvInWrap" hidden><label for="cvIn">Input map shown <b id="cvInName"></b></label><input id="cvIn" type="range" min="0" max="7" value="0"></div>
+      <div class="kgrids" id="cvGrids"></div>
+      <div class="readout" id="cvReadout"></div>
+      <div class="row">
+        <button class="btn primary" id="sweepBtn">▶ Sweep</button>
+        <button class="btn" id="stepBtn">Next position</button>
+        <label class="check" for="fast"><input type="checkbox" id="fast"> Fast</label>
+      </div>
+      <div class="mini-wrap"><canvas id="cvMini" width="140" height="140" aria-label="Feature map being built"></canvas>
+        <p class="note" style="flex:1;min-width:150px">The feature map fills in as the window moves. Click the pixel grid above, or any cell in the 3D view, to put the window there.</p></div>
+      <p class="note" id="cv2note" hidden>In conv 2 the window is 3×3 <b>and 8 deep</b>: it covers the same 3×3 spot on all eight maps of the layer below, so each output cell adds up 72 products. Weight sharing is the point: the same 72 weights are used at all 196 positions.</p>
+    </section>
+
+    <section class="sec" data-sec="layer" hidden>
+      <div class="row" style="justify-content:space-between"><span class="badge" id="lyBadge"></span><span class="cap" id="lyRf"></span></div>
+      <h2 id="lyTitle"></h2>
+      <p id="lyIntro"></p>
+      <div class="ctl"><label for="lyCh">Channel <b id="lyChName"></b></label><input id="lyCh" type="range" min="0" max="7" value="0"></div>
+      <p id="lyDesc" class="rule"></p>
+      <div class="mini-wrap"><canvas id="lyMini" width="140" height="140" aria-label="This channel's feature map on your drawing"></canvas><div class="readout" id="lyReadout"></div></div>
+      <h3 id="lyKTitle">Its weights</h3>
+      <div id="lyKernel"></div>
+      <div id="lyTuneWrap" class="sec" style="gap:6px"><h3>Orientation preference</h3><canvas id="tuning" width="360" height="96" aria-label="Response to straight lines at 12 angles"></canvas><p class="note">Mean response to a straight stroke drawn at each angle.</p></div>
+      <h3 id="lyPTitle">What excites it most</h3>
+      <div class="patches" id="lyPatches"></div>
+      <p class="note" id="lyPNote"></p>
+      <h3>Which shapes those come from</h3>
+      <div class="bars" id="lyClass"></div>
+      <p class="note">Share of each shape among the 200 test drawings with the strongest response from this channel.</p>
+      <a class="link" id="lyAtlas" href="#atlas"></a>
+    </section>
+
+    <section class="sec" data-sec="rf" hidden>
+      <h2>From local to global</h2>
+      <p>No single cell in layer 1 knows what shape you drew: it sees a 3×3 speck. Each conv adds a ring of one cell, and each pool doubles the step between cells, so the patch of image a cell depends on (its <b>receptive field</b>) grows from 3 px to 18 px, and the final global max looks everywhere at once.</p>
+      <div class="scale" id="rfScale"></div>
+      <div class="readout" id="rfReadout"></div>
+      <h3>How much each layer knows</h3>
+      <div class="bars" id="probeBars"></div>
+      <p class="note">A simple linear classifier was trained on each layer's channels, each reduced to its strongest response anywhere (so position is thrown away). Average brightness alone is right 31% of the time. Knowing which <i>edges</i> appear gets 61%; which <i>corners and curves</i>, 82%; which <i>parts of shapes</i>, 100%.</p>
+      <h3>How picky the channels are</h3>
+      <div class="bars" id="purityBars"></div>
+      <p class="note">For each channel, the share of its 200 strongest test responses that came from its favourite shape, averaged over the layer. Edges appear in every shape, so layer 1 channels are generalists; layer 3 channels specialise.</p>
+    </section>
+
+    <section class="sec" data-sec="dec" hidden>
+      <h2>Why it picked that answer</h2>
+      <p>The last step throws position away. Each of layer 3's 16 maps is reduced to one number, its <b>strongest response anywhere</b> (global max-pooling). Each class score is a weighted vote over those 16 numbers, and softmax turns the five scores into probabilities.</p>
+      <div class="bars click" id="decBars" role="group" aria-label="Choose a class to explain"></div>
+      <h3 id="evTitle">The votes</h3>
+      <p class="note">Each vote is a channel's best match times its weight for this shape. Teal votes push the score up, violet votes push it down. Click a vote to see where in your drawing that channel found its best match: the box above, and the cone in 3D.</p>
+      <div class="contrib" id="contrib"></div>
+      <div class="readout" id="decReadout"></div>
+      <div class="row"><button class="btn" id="openL3">Open in layer 3 →</button></div>
+      <p class="note">Because each vote comes from one 18×18 window, every bit of evidence can be pointed to. The same window could sit anywhere in the image and give the same vote: that is what makes the answer independent of position.</p>
+    </section>
+
+    <section class="sec" data-sec="about" hidden>
+      <h2>A small network, really trained</h2>
+      <div class="facts" id="facts"></div>
+      <p>Architecture: 28×28 input → conv 3×3 (8) → max-pool 2 → conv 3×3 (12) → max-pool 2 → conv 3×3 (16) → global max → 5 scores. Every convolution uses zero padding and ReLU.</p>
+      <p>It was trained from scratch with plain NumPy on 11,000 synthetic hand-drawn shapes (wobbly strokes, random size, aspect, rotation up to ±18°, stroke width and gaps) and tested on 1,500 drawings it never saw. The weights in this page are the trained weights, and every number you see is computed live in your browser.</p>
+      <p class="note">Two choices make it easier to read. Layer-1 filters were kept summing to zero, so they react to changes in ink (edges) rather than to ink itself. Global max-pooling right after layer 3 means each channel's vote comes from one window in the image, so every vote can be traced back to the pixels behind it.</p>
+      <p class="note">Channel names were written by hand after looking at each channel's strongest responses; the patches, class shares, tuning curves, probe accuracies and maps are computed. The network only knows these five shapes, so anything else (a letter, a scribble) still gets forced into one of them. The task is also easy: drawings are centred and scaled first, so even a plain linear model on the raw pixels does well. The point here is to watch how a convolutional network builds its answer, not to show that it needed to.</p>
+      <p class="note">Visual style borrowed from <a href="https://github.com/ShaneM73/inside-alphazero" style="color:var(--accent)">Inside AlphaZero</a>.</p>
+    </section>
+  </aside>
+</div>
+
+<main class="atlas" id="atlas" hidden>
+  <div class="wrap">
+    <div class="ghead">
+      <div><p class="eyebrow">Inside a CNN</p><h1>Feature atlas</h1>
+        <p>All 36 convolution filters of the trained network, side by side: what each one looks for, which shapes set it off, what it does to simple test patterns, and what breaks without it.</p></div>
+      <div class="links"><a class="viewlink" href="#explore">← Back to the 3D explorer</a><a class="viewlink" href="#shower">Shower lab →</a></div>
+    </div>
+    <nav class="jump" aria-label="Jump to section">
+      <button data-j="atlas-l1">Layer 1 · edges</button><button data-j="atlas-l2">Layer 2 · corners &amp; curves</button><button data-j="atlas-l3">Layer 3 · shape parts</button><button data-j="atlas-probe">Probe lab</button><button data-j="atlas-ko">Knock-out</button>
+    </nav>
+    <div id="atlasBody"></div>
+    <p class="gfoot">Typical inputs, synthesised inputs, class shares and knock-out accuracies were computed from the trained weights on 1,500 held-out drawings; probe-lab responses are computed live in your browser. Filter names were written by hand from these views.</p>
+  </div>
+</main>
+
+<main class="atlas" id="shower" hidden>
+  <div class="wrap">
+    <div class="ghead">
+      <div><p class="eyebrow">Inside a CNN · back-propagation by analogy</p><h1>Shower lab</h1>
+        <p>Training a network is like tuning a shower with many knobs. The shower only tells you one thing: too hot or too cold. Back-propagation works out, in one sweep from the shower head backwards, how much each knob is to blame. Then every knob is turned a little, all at the same time.</p></div>
+      <div class="links"><a class="viewlink" href="#explore">← Back to the 3D explorer</a><a class="viewlink" href="#atlas">Feature atlas →</a></div>
+    </div>
+    <section class="gs wide">
+      <div class="shgrid">
+        <div class="sec" style="gap:8px">
+          <svg id="shSvg" viewBox="0 0 760 440" role="img" aria-label="Plumbing: hot and cold water feed two mixers, a valve blends them, the shower shows the temperature"></svg>
+          <p class="cap">Drag a knob up or down (or focus it and use the arrow keys). Colour is temperature; pipe width shows how the valve splits the flow. Teal dashes running backwards are the blame signal.</p>
+        </div>
+        <div class="sec">
+          <div class="row" role="group" aria-label="How many layers">
+            <button class="btn" id="shMode1" aria-pressed="false">One knob · 1 layer</button>
+            <button class="btn" id="shMode2" aria-pressed="true">Two stages · 2 layers</button>
+            <button class="btn" id="shMode3" aria-pressed="false">Deep · 3 layers</button>
+          </div>
+          <label class="check" id="shShareWrap" for="shShare"><input type="checkbox" id="shShare"> One knob drives both mixers (like a convolution filter reused everywhere)</label>
+          <div class="ctl"><label for="shTgt">Wanted temperature <b id="shTgtv"></b></label><input id="shTgt" type="range" min="25" max="55" step="1" value="38"></div>
+          <div class="ctl"><label for="shLR">Step size (learning rate) <b id="shLRv"></b></label><input id="shLR" type="range" min="0.0001" max="0.004" step="0.0001" value="0.001">
+            <div class="row"><button class="btn" data-lr="0.0002">Small · 0.0002</button><button class="btn" data-lr="0.001">Medium · 0.001</button><button class="btn" data-lr="0.003">Large · 0.003</button></div>
+            <p class="note" id="shLRnote"></p></div>
+          <div class="row">
+            <button class="btn primary" id="shBack">◀ Backward pass</button>
+            <button class="btn" id="shStep">Step: turn every knob</button>
+            <button class="btn" id="shAuto">▶ Auto-train</button>
+            <button class="btn" id="shShuffle">Shuffle knobs</button>
+            <button class="btn" id="shReset">Reset</button>
+          </div>
+          <div class="readout" id="shLedger"></div>
+          <canvas id="shChart" width="420" height="150" aria-label="Shower temperature after each step"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="gs wide">
+      <div class="txt"><span class="num">Try this</span><h2>Ten experiments</h2></div>
+      <ol class="tries">
+        <li><b>One knob first.</b> Choose <i>One knob</i>, press <i>Backward pass</i> twice, then <i>Step</i>. With one knob the blame is simple: every unit you turn it moves the shower 40°.</li>
+        <li><b>The worked example.</b> <button class="btn" id="shExample">Load it</button> The shower is 36 °C and you want 38 °C. Step through the backward pass: the valve's blame is T_A − T_B = 10; the blame reaching knob a is diluted by the valve (0.6 × 40 = 24), knob c gets 0.4 × 40 = 16. One step turns all three knobs together and lands at 37.9 °C.</li>
+        <li><b>Blame shrinks through stages.</b> Turn the valve so b is about 0.1, then run the backward pass. Knob a barely reaches the shower any more, so it gets almost no blame and hardly moves. Deep layers far from the output get small signals the same way.</li>
+        <li><b>A shut valve passes no blame.</b> <button class="btn" id="shShut">Shut the valve to mixer A</button> With b = 0, none of mixer A's water reaches you, so ∂T/∂a = 0 and knob a never learns. That is what happens behind a ReLU that is switched off (output zero): no signal comes back through it.</li>
+        <li><b>Step size.</b> Press <i>Large</i> and then <i>Auto-train</i>: each step over-corrects and the temperature swings hot and cold. <i>Small</i> gets there, slowly. The note under the slider says which regime you are in. Notice that the same step size can be fine with two stages and too big with one knob: how big a step is safe depends on how sensitive the shower is. This is the learning rate.</li>
+        <li><b>One knob, used twice.</b> Tick the shared-knob box. Now a single knob sets both mixers, so its blame is the <i>sum</i> of the blame from each place it is used (b × 40 + (1 − b) × 40). A convolution filter's weight is used at every position in the image, and its gradient is summed over all of them the same way.</li>
+      </ol>
+      <div class="txt" style="margin-top:6px"><span class="num">Going deep</span><h2>A three-layer shower</h2>
+        <p>Choose <i>Deep · 3 layers</i>. Three mixers (layer 1) feed two valves (layer 2), which feed one output valve (layer 3). Mixer 2's water is split between both valves, the way one neuron feeds several neurons in the next layer. Six knobs, and the blame now has to pass through three stages.</p></div>
+      <ol class="tries" start="7">
+        <li><b>Three stages of blame.</b> <button class="btn" id="shDeep">Load the deep shower</button> Press <i>Backward pass</i> four times and watch the blame travel layer by layer: the output valve first, then the two layer-2 valves, then the three mixers, then every knob's nudge. A layer-1 knob's blame is a product along its path: 40 × b₁ × c for mixer 1.</li>
+        <li><b>Blame adds where paths meet.</b> Mixer 2 reaches the shower by two routes, so its blame is the sum of both: 40 × (c × (1 − b₁) + (1 − c) × b₂). In a network, a neuron that feeds many others collects gradient from all of them.</li>
+        <li><b>Vanishing blame.</b> <button class="btn" id="shVanish">Starve mixer 1</button> With c and b₁ small, mixer 1's water barely reaches the shower. Its blame is a product of small fractions, so it is tiny and the knob hardly moves, however long you train. Stack enough stages and early layers in a deep network learn very slowly for the same reason: the vanishing-gradient problem.</li>
+        <li><b>Many right answers.</b> Press <i>Shuffle knobs</i>, then <i>Auto-train</i>, a few times. Each run reaches the wanted temperature with a different set of six knob settings. Deep networks are the same: there are many equally good sets of weights, and where you start decides which one training finds.</li>
+      </ol>
+      <p class="rule"><b>The one thing to remember.</b> The backward pass goes from the back to the front, but it moves information (blame), not the knobs. Nobody fixes the last knob first and the first knob later: once every knob's blame is known, all of them are nudged together, and the whole cycle repeats.</p>
+    </section>
+
+    <section class="gs wide">
+      <div class="txt"><span class="num">From shower to network</span><h2>What each part stands for</h2></div>
+      <div class="maptbl">
+        <div class="h">Shower</div><div class="h">Neural network</div>
+        <div>Knob setting (a, b, c)</div><div>A weight</div>
+        <div>Mixer or valve</div><div>A neuron / layer: it combines what flows in</div>
+        <div>Shower temperature</div><div>The network's output (a class score)</div>
+        <div>Wanted temperature</div><div>The correct answer (label)</div>
+        <div>“2° too cold”</div><div>The error; the loss is ½ × error²</div>
+        <div>Running water from the tanks to the shower</div><div>Forward pass</div>
+        <div>“How much does this knob move the shower?” (∂T/∂knob)</div><div>The gradient of the output with respect to that weight</div>
+        <div>Multiplying by each valve's share on the way back</div><div>The chain rule</div>
+        <div>Turning every knob a little against its blame</div><div>Gradient descent step: w ← w − lr × ∂loss/∂w</div>
+        <div>How far you turn per step</div><div>Learning rate</div>
+        <div>A fully shut valve</div><div>A ReLU that outputs zero: no gradient flows back through it</div>
+        <div>One knob feeding several mixers</div><div>Weight sharing in a convolution: gradients add up</div>
+        <div>A mixer whose water feeds two valves (deep shower)</div><div>A neuron connected to several neurons in the next layer: its gradient is the sum over its outgoing paths</div>
+        <div>Blame shrinking as it passes through many partly-open valves</div><div>Vanishing gradients in deep networks</div>
+        <div>Different knob settings giving the same temperature</div><div>Many equally good weight settings; training finds one of them</div>
+      </div>
+      <p class="note">Where the analogy stops: a real network has thousands of knobs, many people (training examples) each wanting a different temperature from a different input, and the blame is averaged over a batch of them before every step. The arithmetic of each step is exactly the one shown above.</p>
+    </section>
+  </div>
+</main>
+
+<script type="application/json" id="model"><!--MODEL--></script>
+<script type="application/json" id="fv"><!--FV--></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+<!--APPJS-->
+</script>
+</body>
+</html>

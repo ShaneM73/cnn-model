@@ -1,0 +1,4 @@
+__pycache__/
+training/data.npz
+training/*.png
+.DS_Store
