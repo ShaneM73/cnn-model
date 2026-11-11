@@ -1000,7 +1000,8 @@ bindShower();
 
 /* ================= Boot ================= */
 if(typeof THREE==="undefined"){const d=document.createElement("div");d.className="glerr";d.textContent="The 3D library didn't load. Check your connection and reload; the panel still works.";stageEl.appendChild(d);}
-else initGL();
+else{try{initGL();}catch(err){GL=false;console.error(err);if(canvas)canvas.style.display="none";
+  const d=document.createElement("div");d.className="glerr";d.textContent="The 3D view couldn't start ("+(err&&err.message||err)+"). The panel, feature atlas and shower lab still work.";stageEl.appendChild(d);}}
 redrawPad();preset(2);showSections();requestAnimationFrame(loop);
 function route(){const h=location.hash,a=h==="#atlas",w=h==="#shower";$("#atlas").hidden=!a;$("#shower").hidden=!w;$(".app").hidden=a||w;
   if(!w)stopAuto();

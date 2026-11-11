@@ -74,7 +74,7 @@ python3 -m http.server 8000
 # open http://localhost:8000
 ```
 
-Three.js and the fonts load from public CDNs, so you need an internet connection.
+three.js (r128) and its OrbitControls ship in `vendor/`, so the page doesn't depend on a CDN for them; public CDNs are only used as a fallback. The fonts load from Google Fonts and fall back to system fonts offline.
 
 ### Editing the page
 
@@ -126,6 +126,7 @@ git push origin main:gh-pages
 ```
 index.html              the built page (explorer + atlas + shower lab)
 src/                    sources used to build index.html
+vendor/                 three.js r128 and OrbitControls (MIT, © three.js authors)
 training/               data generator, NumPy training and analysis scripts, trained weights
 docs/screenshots/       images for this README
 .nojekyll               serve files as-is on GitHub Pages
@@ -135,7 +136,7 @@ docs/screenshots/       images for this README
 
 - Visual style follows [Inside AlphaZero](https://github.com/ShaneM73/inside-alphazero).
 - Feature visualisation ideas from M. Zeiler and R. Fergus, "Visualizing and Understanding Convolutional Networks" (ECCV 2014), and C. Olah et al., "Feature Visualization" (Distill, 2017).
-- Built with [three.js](https://threejs.org/).
+- Built with [three.js](https://threejs.org/) (MIT), included in `vendor/`.
 
 ## License
 
