@@ -12,17 +12,17 @@
 /* Explorer = full-height 3D stage + docked panel (bottom sheet on phones). Palette and type follow Inside AlphaZero. */
 :root{
   --bg:#eef1f4; --surface:#ffffff; --fg:#17212b; --muted:#5b6977; --grid:#b9c3cd;
-  --accent:#0d7a84; --ink:#b97a12; --neg:#4b4fcc; --const:#6f8a3a;
+  --accent:#0d7a84; --ink:#b97a12; --hot:#c8453b; --neg:#4b4fcc; --const:#6f8a3a;
   --f-display:"Familjen Grotesk","Helvetica Neue",Arial,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0e1319; --surface:#161d25; --fg:#e2e8ee; --muted:#93a1ae; --grid:#3a4653;
-  --accent:#3fc4cd; --ink:#e7b04c; --neg:#9396ff; --const:#a6c46a; color-scheme:dark}}
+  --accent:#3fc4cd; --ink:#e7b04c; --hot:#ef7a6c; --neg:#9396ff; --const:#a6c46a; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0e1319; --surface:#161d25; --fg:#e2e8ee; --muted:#93a1ae; --grid:#3a4653;
-  --accent:#3fc4cd; --ink:#e7b04c; --neg:#9396ff; --const:#a6c46a; color-scheme:dark}
+  --accent:#3fc4cd; --ink:#e7b04c; --hot:#ef7a6c; --neg:#9396ff; --const:#a6c46a; color-scheme:dark}
 
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -239,7 +239,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 #shSvg{width:100%;height:auto;background:var(--bg);border-radius:12px;touch-action:none}
 #shSvg text{font-family:var(--f-mono);font-size:13px;fill:var(--fg);text-anchor:middle}
 #shSvg .sub{fill:var(--muted);font-size:12px}
-#shSvg .thot{fill:color-mix(in srgb,var(--ink) 22%,var(--surface));stroke:var(--ink);stroke-width:2}
+#shSvg .thot{fill:color-mix(in srgb,var(--hot) 22%,var(--surface));stroke:var(--hot);stroke-width:2}
 #shSvg .tcold{fill:color-mix(in srgb,var(--neg) 20%,var(--surface));stroke:var(--neg);stroke-width:2}
 #shSvg .pipe{fill:none;stroke-width:10;stroke-linecap:round;transition:stroke .3s,stroke-width .3s}
 #shSvg .water{fill:none;stroke:rgba(255,255,255,.6);stroke-width:2;stroke-dasharray:2 12;stroke-linecap:round;animation:shfwd 1.2s linear infinite}
@@ -284,7 +284,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .shkey .note{margin:4px 0 0;font-size:12.5px}
 .knobs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px}
 .readout .cold{color:var(--neg);font-weight:500}
-.readout .hot{color:var(--ink);font-weight:500}
+.readout .hot{color:var(--hot);font-weight:500}
 .tries{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px;max-width:90ch}
 .tries .btn{padding:3px 9px;font-size:12px;margin:0 4px}
 .maptbl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:1px;background:var(--grid);border-radius:10px;overflow:hidden;border:1px solid var(--grid)}
