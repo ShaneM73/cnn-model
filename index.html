@@ -478,6 +478,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
           <details class="shkey" open><summary>What do a, b and c mean?</summary><div id="shKey"></div></details>
           <div class="knobs" id="shKnobs" aria-label="Knob settings"></div>
           <label class="check" id="shShareWrap" for="shShare"><input type="checkbox" id="shShare"> One knob drives both mixers (like a convolution filter reused everywhere)</label>
+          <div class="ctl"><label for="shStart">Starting temperature <b id="shStartv"></b></label><input id="shStart" type="range" min="20" max="60" step="1" value="36"><p class="note">Where the shower starts before any training. Moving it turns every mixer by the same amount, then clears the steps so far.</p></div>
           <div class="ctl"><label for="shTgt">Wanted temperature <b id="shTgtv"></b></label><input id="shTgt" type="range" min="25" max="55" step="1" value="38"></div>
           <div class="ctl"><label for="shLR">Step size (learning rate) <b id="shLRv"></b></label><input id="shLR" type="range" min="0.0001" max="0.004" step="0.0001" value="0.001">
             <div class="row"><button class="btn" data-lr="0.0002">Small · 0.0002</button><button class="btn" data-lr="0.001">Medium · 0.001</button><button class="btn" data-lr="0.003">Large · 0.003</button></div>
@@ -1366,9 +1367,28 @@ function shDeltas(){const f=shForward(),e=f.T-SH.target,g=shGrad(f),raw={},d={},
 function shAfter(d){ // exact shower temperature once every knob has moved by d
   const o=SH.mode===3?SH.D:SH,keep={...(SH.mode===3?SH.D:{a:SH.a,b:SH.b,c:SH.c})};
   for(const k in d)o[k]=clamp(o[k]+d[k],0,1);const T=shForward().T;Object.assign(o,keep);return T;}
+function mixers(){return SH.mode===3?["a1","a2","a3"]:SH.mode===1||SH.share?["a"]:["a","c"];}
+function setStart(T){ // turn every mixer by the same amount: each mixer's share of the shower adds up to 1, so T moves 40° per unit
+  // a mixer at its 0 or 1 limit can't move, so repeat: the ones with room keep turning until the shower reaches T
+  const o=SH.mode===3?SH.D:SH,ks=mixers();
+  for(let i=0;i<60&&Math.abs(shForward().T-T)>.005;i++){const dl=(T-shForward().T)/40;ks.forEach(k=>o[k]=clamp(o[k]+dl,0,1));if(SH.share)SH.c=SH.a;}
+  if(Math.abs(shForward().T-T)>.05)ks.forEach(k=>o[k]=clamp((T-TCOLD)/40,0,1)); // can't get there this way: set them all equal
+  if(SH.share)SH.c=SH.a;SH.stage=-1;SH.steps=0;SH.hist=[shForward().T];}
 function shStep(){const {d}=shDeltas(),o=SH.mode===3?SH.D:SH;for(const k in d)o[k]=clamp(o[k]+d[k],0,1);SH.steps++;SH.hist.push(shForward().T);SH.stage=-1;}
 const clampNote=(raw,hit,name=k=>k)=>hit.length?`<br><span class="k">knob limit</span> ${hit.map(k=>{const v=getK(k),w=v+raw[k];return `${name(k)} would go to ${w.toFixed(3)}, but a knob only turns from 0 to 1, so it stops at ${clamp(w,0,1).toFixed(0)} and moves ${sgn(clamp(w,0,1)-v)}`;}).join("; ")}`:"";
-const tempCol=T=>{const t=clamp((T-TCOLD)/(THOT-TCOLD),0,1),c=hexToRgb(CS.neg),h=hexToRgb(CS.hot);return `rgb(${c[0]+(h[0]-c[0])*t|0},${c[1]+(h[1]-c[1])*t|0},${c[2]+(h[2]-c[2])*t|0})`;};
+// Water colour. t = share of hot water. Blue and red are blended in OKLCH, a space where equal steps look equal,
+// so 25% hot reads as a blue with a quarter of the way to red, 50% as an even violet, and the mix never goes grey.
+const toLin=v=>(v/=255)<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4),toSrgb=v=>255*clamp(v<=.0031308?12.92*v:1.055*Math.pow(v,1/2.4)-.055,0,1);
+function rgb2lch([r,g,b]){[r,g,b]=[r,g,b].map(toLin);
+  const l=Math.cbrt(.4122214708*r+.5363325363*g+.0514459929*b),m=Math.cbrt(.2119034982*r+.6806995451*g+.1073969566*b),s=Math.cbrt(.0883024619*r+.2817188376*g+.6299787005*b);
+  const L=.2104542553*l+.793617785*m-.0040720468*s,A=1.9779984951*l-2.428592205*m+.4505937099*s,B=.0259040371*l+.7827717662*m-.808675766*s;
+  return [L,Math.hypot(A,B),Math.atan2(B,A)];}
+function lch2rgb([L,C,H]){const A=C*Math.cos(H),B=C*Math.sin(H);
+  const l=(L+.3963377774*A+.2158037573*B)**3,m=(L-.1055613458*A-.0638541728*B)**3,s=(L-.0894841775*A-1.291485548*B)**3;
+  return [4.0767416621*l-3.3077115913*m+.2309699292*s,-1.2684380046*l+2.6097574011*m-.3413193965*s,-.0041960863*l-.7034186147*m+1.707614701*s].map(toSrgb);}
+const tempCol=T=>{const t=clamp((T-TCOLD)/(THOT-TCOLD),0,1),c=rgb2lch(hexToRgb(CS.neg)),h=rgb2lch(hexToRgb(CS.hot));
+  let dh=h[2]-c[2];if(dh>Math.PI)dh-=2*Math.PI;if(dh<-Math.PI)dh+=2*Math.PI; // short way round the hue circle: blue → violet → red
+  const [r,g,b]=lch2rgb([c[0]+(h[0]-c[0])*t,c[1]+(h[1]-c[1])*t,c[2]+dh*t]);return `rgb(${r|0},${g|0},${b|0})`;};
 const sgn=(v,d=3)=>(v>=0?"+":"−")+Math.abs(v).toFixed(d);
 
 /* ---- the plumbing picture ---- */
@@ -1539,7 +1559,7 @@ function syncShowerUI(){
   const kk=$("#shKey");if(kk)kk.innerHTML=SHKEY[SH.mode]+(SH.mode===2&&SH.share?`<p class="note">Shared knob: c is tied to a, so one knob sets both mixers.</p>`:"")+`<p class="note">Every knob runs from 0 to 1, and every knob is one <b>weight</b> of the network.</p>`;
   $("#shMode1").setAttribute("aria-pressed",SH.mode===1);$("#shMode2").setAttribute("aria-pressed",SH.mode===2);$("#shMode3").setAttribute("aria-pressed",SH.mode===3);
   $("#shShareWrap").hidden=SH.mode!==2;$("#shShare").checked=SH.share;
-  $("#shLR").value=SH.lr;$("#shLRv").textContent=SH.lr.toFixed(4);$("#shTgt").value=SH.target;$("#shTgtv").textContent=SH.target+" °C";
+  $("#shLR").value=SH.lr;$("#shLRv").textContent=SH.lr.toFixed(4);$("#shTgt").value=SH.target;{const T0=SH.hist.length?SH.hist[0]:shForward().T;$("#shStart").value=Math.round(T0);$("#shStartv").textContent=T0.toFixed(1)+" °C";}$("#shTgtv").textContent=SH.target+" °C";
   $$("[data-lr]").forEach(b=>b.setAttribute("aria-pressed",Math.abs(+b.dataset.lr-SH.lr)<1e-9));
   const fac=(()=>{const g=shGrad(shForward()),keys=SH.mode===3?K3:["a","b","c"];return keys.filter(k=>g[k]!=null&&!(SH.share&&k==="c")).reduce((s,k)=>s+g[k]*g[k],0);})()*SH.lr;
   $("#shLRnote").textContent=fac>2?"Too big: each step overshoots by more than it corrects, so the temperature swings back and forth.":fac>1.05?"A bit big: it overshoots, then settles.":fac<.35?"Small: safe, but it takes many steps.":"About right: close to the target in a step or two.";}
@@ -1553,6 +1573,7 @@ function bindShower(){
   $("#shDeep").onclick=()=>{stopAuto();Object.assign(SH,{mode:3,share:false,target:38,lr:.001,stage:-1,steps:0});SH.D={...DSTART};SH.hist=[shForward().T];renderShower();};
   $("#shVanish").onclick=()=>{stopAuto();Object.assign(SH,{mode:3,share:false,stage:-1,steps:0});Object.assign(SH.D,{c:.12,b1:.15});SH.hist=[shForward().T];renderShower();SH.stage=4;drawShower();};
   $("#shShare").onchange=e=>{stopAuto();SH.share=e.target.checked;if(SH.share)SH.c=SH.a;SH.stage=-1;SH.hist=[shForward().T];SH.steps=0;renderShower();};
+  $("#shStart").oninput=e=>{stopAuto();setStart(+e.target.value);renderShower();};
   $("#shTgt").oninput=e=>{SH.target=+e.target.value;SH.stage=-1;renderShower();};
   $("#shLR").oninput=e=>{SH.lr=+e.target.value;renderShower();};
   $$("[data-lr]").forEach(b=>b.onclick=()=>{SH.lr=+b.dataset.lr;renderShower();});

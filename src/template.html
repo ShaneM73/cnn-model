@@ -478,6 +478,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
           <details class="shkey" open><summary>What do a, b and c mean?</summary><div id="shKey"></div></details>
           <div class="knobs" id="shKnobs" aria-label="Knob settings"></div>
           <label class="check" id="shShareWrap" for="shShare"><input type="checkbox" id="shShare"> One knob drives both mixers (like a convolution filter reused everywhere)</label>
+          <div class="ctl"><label for="shStart">Starting temperature <b id="shStartv"></b></label><input id="shStart" type="range" min="20" max="60" step="1" value="36"><p class="note">Where the shower starts before any training. Moving it turns every mixer by the same amount, then clears the steps so far.</p></div>
           <div class="ctl"><label for="shTgt">Wanted temperature <b id="shTgtv"></b></label><input id="shTgt" type="range" min="25" max="55" step="1" value="38"></div>
           <div class="ctl"><label for="shLR">Step size (learning rate) <b id="shLRv"></b></label><input id="shLR" type="range" min="0.0001" max="0.004" step="0.0001" value="0.001">
             <div class="row"><button class="btn" data-lr="0.0002">Small · 0.0002</button><button class="btn" data-lr="0.001">Medium · 0.001</button><button class="btn" data-lr="0.003">Large · 0.003</button></div>
